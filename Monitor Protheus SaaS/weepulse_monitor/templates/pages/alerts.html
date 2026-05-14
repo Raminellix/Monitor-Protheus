@@ -1,0 +1,268 @@
+{% extends "layout.html" %}
+{% block title %}Alertas & Snapshots | Weepulse{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+  <div>
+    <h1 class="h1" style="margin-bottom: 5px;">Caixa Preta (Snapshots de Alertas)</h1>
+    <p class="sub">Fotografias exatas do ambiente quando limites de CPU ou Memória foram excedidos.</p>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom: 20px; display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;">
+    <div>
+        <label style="display: block; font-size: 12px; margin-bottom: 4px; color: var(--text-muted);">Data Específica</label>
+        <input type="text" id="filterDate" class="control" placeholder="DD/MM/AAAA" maxlength="10" oninput="maskDate(this)" style="width: 130px !important; padding: 6px 10px !important; text-align: center;" />
+    </div>
+    <div>
+        <label style="display: block; font-size: 12px; margin-bottom: 4px; color: var(--text-muted);">Servidor</label>
+        <select id="filterServer" class="control" style="width: auto !important; padding: 6px 10px !important;">
+            <option value="TODOS">Todos os Servidores</option>
+            {% for s in servers %}
+                <option value="{{ s.name }}">{{ s.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button class="btn secondary" style="padding: 8px 15px; margin-bottom: 2px;" onclick="loadSnapshots()">🔍 Filtrar</button>
+</div>
+
+<div class="card" style="overflow-x: auto;">
+    <table class="table" style="width: 100%;">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Data e Hora</th>
+                <th>Servidor Estourado</th>
+                <th>Motivo (Gatilho)</th>
+                <th style="text-align: right;">Ações</th>
+            </tr>
+        </thead>
+        <tbody id="snapshotsBody">
+            <tr><td colspan="5" style="text-align: center; padding: 20px;">Carregando dados...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<div id="snapshotModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 10001; justify-content: center; align-items: center; padding: 20px;">
+    <div style="background: var(--bg-body); border: 1px solid var(--border-color); border-radius: 12px; width: 100%; max-width: 1200px; height: 90vh; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
+        
+        <div style="padding: 15px 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background-color: var(--bg-card); border-radius: 12px 12px 0 0;">
+            <h2 style="margin: 0; color: var(--text-main); font-size: 16px;">📸 Detalhes do Snapshot <span id="snapIdTitle" style="color: #ef4444;"></span></h2>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn" style="background-color: #3b82f6; border: none; padding: 6px 12px; font-size: 13px;" onclick="printSnapshotPDF()">🖨️ Imprimir / Salvar PDF</button>
+                <button onclick="document.getElementById('snapshotModal').style.display='none';" style="background: transparent; border: none; font-size: 24px; cursor: pointer; color: var(--text-muted); line-height: 1;">&times;</button>
+            </div>
+        </div>
+        
+        <div style="padding: 20px; flex: 1; overflow-y: auto; background-color: #f8fafc;" id="printArea">
+            </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allSnapshots = [];
+let currentSnap = null;
+
+// FUNÇÃO DA MÁSCARA: Coloca as barras automaticamente
+function maskDate(input) {
+    let v = input.value.replace(/\D/g, ''); // Remove tudo que não for número
+    if (v.length > 8) v = v.substring(0, 8); // Limita a 8 números
+    if (v.length >= 5) {
+        input.value = v.substring(0, 2) + '/' + v.substring(2, 4) + '/' + v.substring(4, 8);
+    } else if (v.length >= 3) {
+        input.value = v.substring(0, 2) + '/' + v.substring(2, 4);
+    } else {
+        input.value = v;
+    }
+}
+
+function escapeHtml(s) {
+    return (s || "").toString().replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+async function loadSnapshots() {
+    const dDate = document.getElementById("filterDate").value;
+    const dServ = document.getElementById("filterServer").value;
+    const tbody = document.getElementById("snapshotsBody");
+    
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 20px;">Atualizando...</td></tr>`;
+    
+    try {
+        // Envia a data com a barra (/) de forma segura para o Python
+        const res = await fetch(`{{ url_for('alerts_snap.alerts_data') }}?date=${encodeURIComponent(dDate)}&server=${encodeURIComponent(dServ)}`);
+        const data = await res.json();
+        
+        if(data.ok) {
+            allSnapshots = data.snapshots;
+            tbody.innerHTML = "";
+            if(allSnapshots.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text-muted);">Nenhum alerta registrado neste filtro.</td></tr>`;
+                return;
+            }
+            
+            allSnapshots.forEach(s => {
+                tbody.innerHTML += `
+                    <tr style="border-bottom: 1px solid var(--border-color);">
+                        <td style="padding: 12px; color: var(--text-muted);">#${s.id}</td>
+                        <td style="padding: 12px; font-weight: bold; color: var(--text-main);">${s.timestamp}</td>
+                        <td style="padding: 12px; color: #ef4444; font-weight: bold;">${escapeHtml(s.server)}</td>
+                        <td style="padding: 12px; color: var(--text-muted); font-size: 12px; max-width: 300px; white-space: pre-wrap;">${escapeHtml(s.reasons)}</td>
+                        <td style="padding: 12px; text-align: right;">
+                            <button class="btn secondary" style="padding: 4px 10px; font-size: 12px;" onclick="viewSnapshot(${s.id})">👁️ Ver Tudo</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+    } catch(e) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ef4444;">Erro ao carregar dados.</td></tr>`;
+    }
+}
+
+function viewSnapshot(id) {
+    currentSnap = allSnapshots.find(s => s.id === id);
+    if(!currentSnap) return;
+    
+    document.getElementById("snapIdTitle").innerText = `(ID: ${id})`;
+    const printArea = document.getElementById("printArea");
+    
+    let html = `
+        <div style="font-family: Arial, sans-serif; color: #334155;">
+            <div style="background: #fee2e2; border-left: 4px solid #ef4444; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+                <h3 style="margin: 0 0 10px 0; color: #991b1b;">⚠️ Gatilho do Alerta</h3>
+                <p style="margin: 0; font-size: 14px;"><b>Data:</b> ${currentSnap.timestamp}</p>
+                <p style="margin: 5px 0 0 0; font-size: 14px;"><b>Servidor:</b> ${escapeHtml(currentSnap.server)}</p>
+                <pre style="margin: 10px 0 0 0; font-size: 12px; color: #7f1d1d; white-space: pre-wrap;">${escapeHtml(currentSnap.reasons)}</pre>
+            </div>
+    `;
+    
+    // 1. SERVIDORES (CPU / RAM)
+    html += `<h3 style="border-bottom: 2px solid #cbd5e1; padding-bottom: 5px; color: #1e293b;">💻 Saúde Global da Infraestrutura</h3>`;
+    currentSnap.servers_data.forEach(srv => {
+        let topCpuHtml = "<div style='font-size:11px; color:#64748b;'>Sem dados</div>";
+        if(srv.top_cpu_processes && srv.top_cpu_processes.length > 0) {
+            topCpuHtml = `<table style="width: 100%; border-collapse: collapse; font-size: 10px; background: #fff;">
+                <tr style="background:#f1f5f9;"><th style="padding:4px; border:1px solid #e2e8f0; text-align:left;">Processo</th><th style="padding:4px; border:1px solid #e2e8f0; text-align:right;">CPU</th></tr>`;
+            srv.top_cpu_processes.forEach(p => {
+                topCpuHtml += `<tr><td style="padding:4px; border:1px solid #e2e8f0;">${escapeHtml(p.name)} (${p.pid})</td><td style="padding:4px; border:1px solid #e2e8f0; color:#ef4444; text-align:right; font-weight:bold;">${p.cpu_percent}%</td></tr>`;
+            });
+            topCpuHtml += `</table>`;
+        }
+
+        let topMemHtml = "<div style='font-size:11px; color:#64748b;'>Sem dados</div>";
+        if(srv.top_mem_processes && srv.top_mem_processes.length > 0) {
+            topMemHtml = `<table style="width: 100%; border-collapse: collapse; font-size: 10px; background: #fff;">
+                <tr style="background:#f1f5f9;"><th style="padding:4px; border:1px solid #e2e8f0; text-align:left;">Processo</th><th style="padding:4px; border:1px solid #e2e8f0; text-align:right;">RAM</th></tr>`;
+            srv.top_mem_processes.forEach(p => {
+                topMemHtml += `<tr><td style="padding:4px; border:1px solid #e2e8f0;">${escapeHtml(p.name)} (${p.pid})</td><td style="padding:4px; border:1px solid #e2e8f0; color:#3b82f6; text-align:right; font-weight:bold;">${p.working_set_mb} MB</td></tr>`;
+            });
+            topMemHtml += `</table>`;
+        }
+        
+        html += `
+        <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; margin-bottom: 15px; background: #ffffff;">
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 10px;">
+                <b style="font-size: 14px;">${escapeHtml(srv.server_name)}</b>
+                <span style="font-size: 13px;">CPU: <b style="color:#ef4444;">${srv.cpu_percent}%</b> | RAM: <b style="color:#3b82f6;">${srv.mem_percent}%</b></span>
+            </div>
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                    <td style="width: 50%; vertical-align: top; padding-right: 5px;">${topCpuHtml}</td>
+                    <td style="width: 50%; vertical-align: top; padding-left: 5px;">${topMemHtml}</td>
+                </tr>
+            </table>
+        </div>`;
+    });
+
+    // 2. USUÁRIOS BROKER
+    html += `<h3 style="border-bottom: 2px solid #cbd5e1; padding-bottom: 5px; color: #1e293b; margin-top: 30px;">👥 AppServer Broker (Usuários)</h3>`;
+    let brokerHtml = `<p style="font-size: 12px; color: #64748b;">Nenhum utilizador encontrado ou falha na leitura.</p>`;
+    
+    if(currentSnap.broker_data.users && currentSnap.broker_data.users.length > 0) {
+        const users = currentSnap.broker_data.users;
+        const keys = currentSnap.broker_data.keys || Object.keys(users[0]);
+        
+        brokerHtml = `<table style="width: 100%; border-collapse: collapse; font-size: 9px; background: #fff; table-layout: fixed; word-wrap: break-word;">`;
+        brokerHtml += `<tr style="background:#f1f5f9;">`;
+        keys.forEach(k => { brokerHtml += `<th style="padding:4px; border:1px solid #cbd5e1;">${escapeHtml(k).toUpperCase()}</th>`; });
+        brokerHtml += `</tr>`;
+        
+        users.forEach(u => {
+            brokerHtml += `<tr>`;
+            keys.forEach(k => { brokerHtml += `<td style="padding:4px; border:1px solid #e2e8f0;">${escapeHtml(u[k]) || '-'}</td>`; });
+            brokerHtml += `</tr>`;
+        });
+        brokerHtml += `</table>`;
+    }
+    html += brokerHtml;
+    
+    // 3. SQL sp_WhoIsActive
+    html += `<h3 style="border-bottom: 2px solid #cbd5e1; padding-bottom: 5px; color: #1e293b; margin-top: 30px;">🗄️ SQL Server (sp_WhoIsActive)</h3>`;
+    let sqlHtml = `<p style="font-size: 12px; color: #64748b;">Nenhum dado retornado do SQL.</p>`;
+    
+    if(currentSnap.sql_data && currentSnap.sql_data.length > 0) {
+        if(currentSnap.sql_data[0]["Erro_SQL"]) {
+             sqlHtml = `<p style="font-size: 12px; color: #ef4444; font-weight: bold;">${escapeHtml(currentSnap.sql_data[0]["Erro_SQL"])}</p>`;
+        } else {
+            const sqlRows = currentSnap.sql_data;
+            const sqlKeys = Object.keys(sqlRows[0]);
+            
+            sqlHtml = `<div style="overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; font-size: 9px; background: #fff; white-space: nowrap;">`;
+            sqlHtml += `<tr style="background:#f1f5f9;">`;
+            sqlKeys.forEach(k => { sqlHtml += `<th style="padding:4px; border:1px solid #cbd5e1;">${escapeHtml(k)}</th>`; });
+            sqlHtml += `</tr>`;
+            
+            sqlRows.forEach(u => {
+                sqlHtml += `<tr>`;
+                sqlKeys.forEach(k => { sqlHtml += `<td style="padding:4px; border:1px solid #e2e8f0;">${escapeHtml(u[k]) || '-'}</td>`; });
+                sqlHtml += `</tr>`;
+            });
+            sqlHtml += `</table></div>`;
+        }
+    }
+    html += sqlHtml;
+    
+    html += `</div>`; // fecha main div
+    
+    printArea.innerHTML = html;
+    document.getElementById("snapshotModal").style.display = "flex";
+}
+
+function printSnapshotPDF() {
+    const reportHtml = document.getElementById("printArea").innerHTML;
+    const printWindow = window.open('', '_blank', 'width=1200,height=800');
+    
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+            <head>
+                <title>Snapshot Alerta - Weepulse</title>
+                <style>
+                    @page { size: A4 landscape; margin: 10mm; }
+                    body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 10px; background-color: #fff; }
+                    * { -webkit-print-color-adjust: exact !important; color-adjust: exact !important; print-color-adjust: exact !important; }
+                </style>
+            </head>
+            <body>
+                <div style="text-align: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #e2e8f0;">
+                    <h2 style="color: #1e293b; margin-bottom: 5px; font-size: 18px;">CAIXA PRETA - WEEPULSE</h2>
+                    <p style="color: #64748b; font-size: 12px; margin-top: 0;">Registo Automático de Incidente</p>
+                </div>
+                ${reportHtml}
+                <script>
+                    window.onload = function() {
+                        setTimeout(function() { window.print(); window.close(); }, 500);
+                    };
+                <\/script>
+            </body>
+        </html>
+    `);
+    printWindow.document.close();
+}
+
+window.onload = loadSnapshots;
+</script>
+{% endblock %}

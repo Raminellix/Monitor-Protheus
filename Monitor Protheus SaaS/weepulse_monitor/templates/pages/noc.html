@@ -1,0 +1,354 @@
+{% extends "layout.html" %}
+{% block title %}Dashboard NOC | Weepulse{% endblock %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+    .noc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 25px; }
+    .noc-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 25px; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.05); transition: transform 0.3s; }
+    .noc-card:hover { transform: translateY(-5px); }
+    .noc-title { font-size: 13px; color: var(--text-muted); text-transform: uppercase; font-weight: bold; letter-spacing: 1px; margin-bottom: 15px; }
+    .noc-value { font-size: 52px; font-weight: 900; color: var(--text-main); line-height: 1; }
+    .noc-sub { font-size: 13px; color: var(--text-muted); margin-top: 12px; }
+    
+    .status-ok { color: #10b981 !important; }
+    .status-warn { color: #f59e0b !important; }
+    .status-info { color: #6366f1 !important; }
+    .status-danger { color: #ef4444 !important; animation: pulseTextRed 1.5s infinite; }
+
+    @keyframes pulseTextRed {
+        0% { text-shadow: 0 0 0 rgba(239, 68, 68, 0); transform: scale(1); }
+        50% { text-shadow: 0 0 15px rgba(239, 68, 68, 0.7); transform: scale(1.02); }
+        100% { text-shadow: 0 0 0 rgba(239, 68, 68, 0); transform: scale(1); }
+    }
+
+    /* Grelha de 3 colunas para as listas de problemas */
+    .noc-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 25px; }
+    .list-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; min-height: 250px; }
+    .list-item { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--border-color); font-size: 14px; color: var(--text-main); }
+    .list-item:last-child { border-bottom: none; }
+    .badge-error { background-color: rgba(239, 68, 68, 0.1); color: #ef4444; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: bold; text-align: right;}
+    
+    #nocClock { font-family: monospace; font-size: 18px; font-weight: bold; color: var(--text-main); background: var(--bg-body); padding: 5px 15px; border-radius: 8px; border: 1px solid var(--border-color); }
+    
+    /* Layout do Gráfico */
+    .chart-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
+</style>
+
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px;">
+    <div style="display: flex; align-items: center; gap: 20px;">
+        <div>
+            <h1 class="h1" style="margin-bottom: 5px;">7) Dashboard Global (NOC)</h1>
+            <p class="sub">Visão consolidada da infraestrutura. Ecrã focado em gestão à vista.</p>
+        </div>
+        <div id="nocClock">00:00:00</div>
+    </div>
+    
+    <div style="display: flex; align-items: center; gap: 15px;">
+        <div style="display: flex; gap: 5px; align-items: center;">
+            <span class="small-muted">Auto-Scan:</span>
+            <select id="refreshSelect" style="padding: 4px 8px !important; margin: 0; min-width: 70px;">
+                <option value="0">Off</option>
+                <option value="10">10s</option>
+                <option value="15" selected>15s</option>
+                <option value="30">30s</option>
+                <option value="60">60s</option>
+            </select>
+        </div>
+        <div style="text-align: right; border-left: 1px solid var(--border-color); padding-left: 15px;">
+            <div class="small-muted" id="lastUpdate" style="margin-bottom: 6px;">A ligar aos motores...</div>
+            <div style="background-color: #10b981; color: white; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: bold; display: inline-block; letter-spacing: 0.5px;">MODO TV ATIVO</div>
+        </div>
+    </div>
+</div>
+
+<div class="noc-grid">
+    <div class="noc-card">
+        <div class="noc-title">Servidores Online</div>
+        <div class="noc-value" id="kpi-servers">-</div>
+        <div class="noc-sub" id="sub-servers">A ler dados da rede...</div>
+    </div>
+    <div class="noc-card">
+        <div class="noc-title">Serviços Protheus (Up)</div>
+        <div class="noc-value" id="kpi-services">-</div>
+        <div class="noc-sub" id="sub-services">A ler dados da rede...</div>
+    </div>
+    <div class="noc-card">
+        <div class="noc-title">Alertas de Recursos</div>
+        <div class="noc-value" id="kpi-alerts">-</div>
+        <div class="noc-sub" id="sub-alerts">CPU, RAM ou Discos críticos</div>
+    </div>
+    <div class="noc-card">
+        <div class="noc-title">Auto-Healing Ativos</div>
+        <div class="noc-value status-info" id="kpi-healing">-</div>
+        <div class="noc-sub">Serviços blindados</div>
+    </div>
+</div>
+
+<div class="noc-lists">
+    <div class="list-card">
+        <div class="noc-title" style="color: #ef4444; border-bottom: 2px solid var(--border-color); padding-bottom: 12px; font-size: 15px;">
+            🔴 Incidentes Protheus (Serviços)
+        </div>
+        <div id="list-services-down">
+            <div class="small-muted" style="margin-top: 20px; text-align: center;">A sincronizar estado...</div>
+        </div>
+    </div>
+    
+    <div class="list-card">
+        <div class="noc-title" style="color: #f59e0b; border-bottom: 2px solid var(--border-color); padding-bottom: 12px; font-size: 15px;">
+            ⚠️ Alertas de Infraestrutura (Hardware)
+        </div>
+        <div id="list-server-alerts">
+            <div class="small-muted" style="margin-top: 20px; text-align: center;">A sincronizar estado...</div>
+        </div>
+    </div>
+
+    <div class="list-card">
+        <div class="noc-title" style="color: #3b82f6; border-bottom: 2px solid var(--border-color); padding-bottom: 12px; font-size: 15px;">
+            💾 Armazenamento (Top 3 Discos Mais Cheios)
+        </div>
+        <div id="list-top-disks">
+            <div class="small-muted" style="margin-top: 20px; text-align: center;">A processar volumes...</div>
+        </div>
+    </div>
+</div>
+
+<div class="chart-card">
+    <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 15px;">
+        <div class="noc-title" style="margin: 0; font-size: 15px; color: var(--text-main);">📈 Nível de Stress da Infraestrutura (CPU Média Global)</div>
+        <span class="small-muted" id="currentAvgCpu">--%</span>
+    </div>
+    <div style="width: 100%; height: 120px;">
+        <canvas id="globalCpuChart"></canvas>
+    </div>
+</div>
+
+<script>
+let nocTimer = null;
+let cpuChartObj = null;
+
+// Arrays para guardar o histórico do gráfico do Dashboard na memória
+let chartLabels = Array(20).fill('');
+let chartData = Array(20).fill(null);
+
+// Relógio em tempo real
+setInterval(() => {
+    document.getElementById('nocClock').innerText = new Date().toLocaleTimeString('pt-PT');
+}, 1000);
+
+// Inicializa o Gráfico Vazio
+function initChart() {
+    const ctx = document.getElementById('globalCpuChart').getContext('2d');
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    
+    cpuChartObj = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: chartLabels,
+            datasets: [{
+                label: 'CPU Global (%)',
+                data: chartData,
+                borderColor: '#6366f1',
+                backgroundColor: 'rgba(99, 102, 241, 0.15)',
+                borderWidth: 2,
+                tension: 0.4,
+                fill: true,
+                pointRadius: 0,
+                pointHitRadius: 10
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 0 },
+            scales: {
+                y: { min: 0, max: 100, grid: { color: isDark ? '#334155' : '#e2e8f0' } },
+                x: { grid: { display: false }, ticks: { maxTicksLimit: 10 } }
+            },
+            plugins: { legend: { display: false } }
+        }
+    });
+}
+
+async function updateNOC() {
+    try {
+        const [resServers, resServices] = await Promise.all([
+            fetch("{{ url_for('servers.scan_json') }}").catch(() => null),
+            fetch("{{ url_for('services.scan_json') }}").catch(() => null)
+        ]);
+        
+        let dataServers = { health: [] };
+        let dataServices = { services: [] };
+        
+        if (resServers && resServers.ok) dataServers = await resServers.json();
+        if (resServices && resServices.ok) dataServices = await resServices.json();
+        
+        processNocData(dataServers.health || [], dataServices.services || []);
+        
+        const now = new Date();
+        document.getElementById("lastUpdate").innerText = `Última verificação: ${now.toLocaleTimeString()}`;
+        document.getElementById("lastUpdate").classList.remove("status-danger");
+    } catch (e) {
+        document.getElementById("lastUpdate").innerText = "Falha de ligação ao motor!";
+        document.getElementById("lastUpdate").classList.add("status-danger");
+    }
+}
+
+function processNocData(servers, services) {
+    let totalServers = servers.length;
+    let offlineServers = 0;
+    let totalAlerts = 0;
+    let alertsHtml = "";
+    
+    // Arrays para o Top 3 Discos e Cálculo de CPU Média
+    let allDisks = [];
+    let totalCpu = 0;
+    let validCpuCount = 0;
+
+    servers.forEach(srv => {
+        let srvIsOffline = false;
+        if (srv.latency === "Timeout" || srv.latency === "Erro" || srv.status.includes("ERRO")) {
+            srvIsOffline = true;
+            offlineServers++;
+            alertsHtml += `<div class="list-item">
+                <span>💻 <b>${srv.server_name}</b> <span class="small-muted">(${srv.server_address})</span></span>
+                <span class="badge-error">OFFLINE<br><small>Sem Ping</small></span>
+            </div>`;
+        }
+
+        if (!srvIsOffline && srv.alerts && srv.alerts.length > 0) {
+            totalAlerts += srv.alerts.length;
+            srv.alerts.forEach(al => {
+                alertsHtml += `<div class="list-item">
+                    <span>💻 <b>${srv.server_name}</b>:<br><span style="color: var(--text-muted); font-size: 12px;">${al}</span></span>
+                </div>`;
+            });
+        }
+        
+        // Coleta Discos para o Ranking
+        if (srv.disks && srv.disks.length > 0) {
+            srv.disks.forEach(d => {
+                allDisks.push({
+                    server: srv.server_name,
+                    mount: d.mount,
+                    free_percent: parseFloat(d.free_percent),
+                    used_percent: 100 - parseFloat(d.free_percent),
+                    total_gb: d.total_gb
+                });
+            });
+        }
+
+        // Coleta CPU para a Média Global
+        if (!srvIsOffline && !isNaN(srv.cpu_percent)) {
+            totalCpu += parseFloat(srv.cpu_percent);
+            validCpuCount++;
+        }
+    });
+
+    // ----------------------------------------------------------------
+    // PROCESSAR PLACARES DE SERVIDORES E ALERTAS
+    // ----------------------------------------------------------------
+    const kpiServers = document.getElementById("kpi-servers");
+    kpiServers.innerText = `${totalServers - offlineServers} / ${totalServers}`;
+    kpiServers.className = offlineServers > 0 ? "noc-value status-danger" : "noc-value status-ok";
+    document.getElementById("sub-servers").innerText = offlineServers > 0 ? `${offlineServers} servidor(es) offline` : "Comunicação a 100%";
+
+    const kpiAlerts = document.getElementById("kpi-alerts");
+    kpiAlerts.innerText = totalAlerts;
+    kpiAlerts.className = totalAlerts > 0 ? "noc-value status-warn" : "noc-value status-ok";
+    document.getElementById("list-server-alerts").innerHTML = alertsHtml || `<div class="small-muted" style="margin-top: 20px; text-align: center;">✅ Infraestrutura limpa. Nenhum alerta de hardware crítico neste momento.</div>`;
+
+    // ----------------------------------------------------------------
+    // PROCESSAR SERVIÇOS PROTHEUS
+    // ----------------------------------------------------------------
+    let totalServices = services.length;
+    let stoppedServices = 0;
+    let monitoredCount = 0;
+    let stoppedHtml = "";
+
+    services.forEach(svc => {
+        if (svc.is_monitored) monitoredCount++;
+        
+        const isStopped = svc.status.includes("STOPPED");
+        const isHung = svc.port_status && svc.port_status.includes("Travado");
+        
+        if (isStopped || isHung) {
+            stoppedServices++;
+            let reason = isStopped ? "SERVIÇO PARADO" : "PORTA TRAVADA";
+            stoppedHtml += `<div class="list-item">
+                <span>⚙️ <b>${svc.service_name}</b> <span class="small-muted">(${svc.server_name})</span></span>
+                <span class="badge-error">${reason}</span>
+            </div>`;
+        }
+    });
+
+    const kpiServices = document.getElementById("kpi-services");
+    kpiServices.innerText = `${totalServices - stoppedServices} / ${totalServices}`;
+    kpiServices.className = stoppedServices > 0 ? "noc-value status-danger" : "noc-value status-ok";
+    document.getElementById("sub-services").innerText = stoppedServices > 0 ? `${stoppedServices} anomalia(s) detetada(s)` : "Operação Normal";
+
+    document.getElementById("kpi-healing").innerText = monitoredCount;
+    document.getElementById("list-services-down").innerHTML = stoppedHtml || `<div class="small-muted" style="margin-top: 20px; text-align: center;">✅ Todos os serviços do ERP e Portas TCP encontram-se a responder ativamente.</div>`;
+
+    // ----------------------------------------------------------------
+    // PROCESSAR RANKING DOS 3 DISCOS MAIS CHEIOS
+    // ----------------------------------------------------------------
+    allDisks.sort((a, b) => a.free_percent - b.free_percent); // Crescente pelo livre = Mais cheios primeiro
+    let top3Disks = allDisks.slice(0, 3);
+    let disksHtml = "";
+
+    if (top3Disks.length === 0) {
+        disksHtml = `<div class="small-muted" style="margin-top: 20px; text-align: center;">Sem dados de armazenamento.</div>`;
+    } else {
+        top3Disks.forEach(d => {
+            let color = d.used_percent > 90 ? '#ef4444' : (d.used_percent > 75 ? '#f59e0b' : '#10b981');
+            disksHtml += `
+            <div style="margin-bottom: 18px; margin-top: 10px;">
+               <div style="display:flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: var(--text-main);">
+                   <span>💻 <b>${d.server}</b> <span class="small-muted">(${d.mount})</span></span>
+                   <span style="color: ${color}; font-weight: bold;">${d.used_percent.toFixed(1)}% Usado</span>
+               </div>
+               <div style="width: 100%; background: var(--border-color); border-radius: 6px; height: 10px; overflow: hidden;">
+                   <div style="width: ${d.used_percent}%; background: ${color}; height: 100%; border-radius: 6px; transition: width 0.5s;"></div>
+               </div>
+            </div>`;
+        });
+    }
+    document.getElementById("list-top-disks").innerHTML = disksHtml;
+
+    // ----------------------------------------------------------------
+    // ATUALIZAR GRÁFICO SPARKLINE DE CPU GLOBAL
+    // ----------------------------------------------------------------
+    if (!cpuChartObj) initChart();
+
+    let avgCpuValue = validCpuCount > 0 ? (totalCpu / validCpuCount) : 0;
+    let nowStr = new Date().toLocaleTimeString('pt-PT', {hour: '2-digit', minute:'2-digit', second:'2-digit'});
+    
+    // Roda a fita do gráfico
+    chartLabels.shift();
+    chartLabels.push(nowStr);
+    
+    chartData.shift();
+    chartData.push(avgCpuValue.toFixed(1));
+
+    document.getElementById("currentAvgCpu").innerText = `${avgCpuValue.toFixed(1)}% Médio`;
+    
+    cpuChartObj.update();
+}
+
+function setupAutoScan() {
+    if (nocTimer) clearInterval(nocTimer);
+    const sec = parseInt(document.getElementById("refreshSelect").value);
+    if (sec > 0) nocTimer = setInterval(updateNOC, sec * 1000);
+}
+
+document.getElementById("refreshSelect").addEventListener("change", setupAutoScan);
+window.onload = () => {
+    initChart();
+    setupAutoScan();
+    updateNOC();
+};
+</script>
+{% endblock %}

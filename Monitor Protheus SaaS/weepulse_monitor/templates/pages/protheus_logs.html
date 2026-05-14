@@ -1,0 +1,406 @@
+{% extends "layout.html" %}
+{% block title %}Logs Protheus | Weepulse{% endblock %}
+
+{% block content %}
+<style>
+  .tabs-container { border-bottom: 2px solid var(--border-color); margin-bottom: 20px; display: flex; gap: 10px; }
+  .tab-btn { background: transparent; border: none; border-bottom: 3px solid transparent; padding: 10px 20px; font-size: 15px; font-weight: bold; color: var(--text-muted); cursor: pointer; transition: 0.3s; outline: none; }
+  .tab-btn:hover { color: var(--text-main); }
+  .tab-btn.active { color: #3b82f6; border-bottom-color: #3b82f6; }
+
+  .log-viewer-container { background-color: #0c0c0c; border: 1px solid #333; border-radius: 8px; padding: 15px; height: 65vh; overflow-y: auto; box-shadow: inset 0 0 10px rgba(0,0,0,0.8); }
+  .log-line { font-family: 'Courier New', Courier, monospace; font-size: 13px; line-height: 1.5; color: #22c55e; white-space: pre-wrap; word-wrap: break-word; padding: 2px 4px; border-radius: 3px; }
+  .log-line:hover { background-color: rgba(255, 255, 255, 0.05); }
+
+  .log-viewer-container::-webkit-scrollbar { width: 10px; }
+  .log-viewer-container::-webkit-scrollbar-track { background: #1a1a1a; border-radius: 8px; }
+  .log-viewer-container::-webkit-scrollbar-thumb { background: #444; border-radius: 8px; }
+  .log-viewer-container::-webkit-scrollbar-thumb:hover { background: #666; }
+
+  .inst-btn { text-align: left; width: 100%; margin-bottom: 8px; padding: 10px 15px; background-color: var(--bg-body); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; transition: all 0.2s; }
+  .inst-btn:hover { background-color: var(--bg-card); border-color: #3b82f6; }
+  .inst-btn.active { background-color: #3b82f6; color: white; border-color: #3b82f6; }
+  .inst-btn.active .small-muted { color: #bfdbfe; }
+
+  .stat-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05); flex: 1; min-width: 150px; }
+  .stat-number { font-size: 28px; font-weight: 900; color: #ef4444; line-height: 1; margin-bottom: 5px; }
+  
+  .anomaly-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 15px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+  .anomaly-header { background: #1e293b; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; }
+  .anomaly-body { background: #0c0c0c; color: #38bdf8; font-family: monospace; font-size: 12px; padding: 15px; white-space: pre-wrap; overflow-x: auto; max-height: 300px; }
+</style>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px;">
+    <div>
+        <h1 class="h1" style="margin-bottom: 5px;">4) Centro de Diagnóstico (Logs)</h1>
+        <p class="sub">O seu Dicionário e Filtros guiam as regras do robô em segundo plano.</p>
+    </div>
+</div>
+
+<div class="tabs-container">
+    <button class="tab-btn active" id="btnTabManual" onclick="switchTab('manual')">🔍 Leitura Manual (Console)</button>
+    <button class="tab-btn" id="btnTabRadar" onclick="switchTab('radar')">📡 Radar de Anomalias (Analytics)</button>
+</div>
+
+<div id="radarConfigModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 10001; justify-content: center; align-items: center; padding: 20px;">
+    <div style="background: var(--bg-body); border: 1px solid var(--border-color); border-radius: 12px; width: 100%; max-width: 600px; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
+        <div style="padding: 15px 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: var(--bg-card); border-radius: 12px 12px 0 0;">
+            <div>
+                <h2 style="margin: 0; color: var(--text-main); font-size: 16px;">⚙️ Serviços Rastreados pelo Radar</h2>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Ative os serviços que o robô deve ler a cada 5 minutos.</div>
+            </div>
+            <button onclick="document.getElementById('radarConfigModal').style.display='none'" style="background: transparent; border: none; font-size: 24px; cursor: pointer; color: var(--text-muted);">&times;</button>
+        </div>
+        <div style="padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;" id="radarConfigList">
+            A carregar serviços da rede...
+        </div>
+    </div>
+</div>
+
+<div id="tabManual">
+    <div class="grid cols2" style="grid-template-columns: 350px 1fr;">
+      <div style="display: flex; flex-direction: column; gap: 20px;">
+          <section class="card">
+            <div class="cardHeader">
+              <h2 class="cardTitle">Instâncias Protheus</h2>
+              <div class="small-muted">Serviços localizados na rede</div>
+            </div>
+
+            <div id="instancesList" style="max-height: 350px; overflow-y: auto; padding-right: 5px;">
+                <div class="small-muted" style="text-align: center; padding: 20px;">
+                    <div class="spinner" style="margin: 0 auto 10px; border-color: #3b82f6; border-right-color: transparent;"></div>
+                    Buscando instâncias...
+                </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="cardHeader" style="border-bottom:none; padding-bottom:0; margin-bottom:10px;">
+              <h2 class="cardTitle">Dicionário de Pesca</h2>
+              <div class="small-muted">Alimenta o Radar e as Cores do Ecrã.</div>
+            </div>
+
+            <div style="display:flex; gap:10px; margin-bottom: 15px;">
+              <div class="control" style="flex: 1;"><input id="kwInput" placeholder="Ex: ACCESS VIOLATION" style="text-transform: uppercase;"></div>
+              <button class="btn small" type="button" onclick="addKw()" style="background-color: #10b981; border:none; width: auto;">Gravar</button>
+            </div>
+
+            <div style="display:flex; flex-direction: column; gap: 8px;">
+              {% for k in keywords %}
+                <div style="display:flex; justify-content:space-between; align-items:center; padding: 8px 12px; border-radius: 6px; background: {{k.bg_color}}; color: {{k.fg_color}}; font-weight: bold; font-size: 13px;">
+                  {{k.keyword}}
+                  <button style="background: none; border: none; color: {{k.fg_color}}; opacity: 0.7; cursor: pointer; font-weight: bold;" onclick="delKw({{k.id}})">✕</button>
+                </div>
+              {% endfor %}
+            </div>
+          </section>
+      </div>
+
+      <section class="card" style="display: flex; flex-direction: column;">
+        <div class="cardHeader" style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <h2 class="cardTitle" id="logTitle">Visualizador de Console</h2>
+            <div class="small-muted" id="logPath" style="font-family: monospace; font-size: 11px; margin-top: 5px; color: #3b82f6;">Aguardando seleção...</div>
+          </div>
+          
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <select id="logLinesSelect" onchange="refreshCurrentLog()" style="padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-body); color: var(--text-main); font-size: 12px; outline: none; cursor: pointer;">
+              <option value="500">Últimas 500 linhas</option>
+              <option value="1500" selected>Últimas 1500 linhas</option>
+              <option value="3000">Últimas 3000 linhas</option>
+              <option value="5000">Últimas 5000 linhas</option>
+              <option value="20000">Últimas 20.000 linhas</option>
+              <option value="100000">Últimas 100.000 linhas</option>
+            </select>
+            
+            <button onclick="downloadLog()" class="btn secondary small" style="background-color: #10b981; color: white; border: none; font-weight: bold; width: auto !important; padding: 6px 12px !important; margin: 0 !important; cursor: pointer;" id="btnDownload" disabled>
+              📥 Exportar (.txt)
+            </button>
+          </div>
+        </div>
+
+        <div id="logViewer" class="log-viewer-container">
+            <div style="color: #444; text-align: center; margin-top: 200px; font-family: monospace;">
+                >_ SELECIONE UMA INSTÂNCIA À ESQUERDA PARA LER O LOG
+            </div>
+        </div>
+      </section>
+    </div>
+</div>
+
+<div id="tabRadar" style="display: none;">
+    <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 25px;" id="radarStats">
+        <div class="small-muted" style="width: 100%; text-align: center; padding: 20px;">A calcular estatísticas globais...</div>
+    </div>
+    
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px;">
+        <h2 class="cardTitle">Pilha de Erros Extraídos (Stack Traces)</h2>
+        <div style="display: flex; gap: 10px;">
+            <button onclick="openRadarConfig()" class="btn secondary small" style="width: auto !important; border: 2px solid var(--border-color); font-weight: bold;">⚙️ Configurar Serviços</button>
+            <button onclick="loadAnomalies()" class="btn secondary small" style="width: auto !important; background: var(--bg-card);">🔄 Recarregar</button>
+        </div>
+    </div>
+
+    <div id="radarList">
+        </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allInstances = []; 
+
+function switchTab(tabName) {
+    document.getElementById('tabManual').style.display = tabName === 'manual' ? 'block' : 'none';
+    document.getElementById('tabRadar').style.display = tabName === 'radar' ? 'block' : 'none';
+    
+    document.getElementById('btnTabManual').className = tabName === 'manual' ? 'tab-btn active' : 'tab-btn';
+    document.getElementById('btnTabRadar').className = tabName === 'radar' ? 'tab-btn active' : 'tab-btn';
+    
+    if (tabName === 'radar') loadAnomalies();
+}
+
+async function loadAnomalies() {
+    const list = document.getElementById("radarList");
+    const stats = document.getElementById("radarStats");
+    list.innerHTML = `<div style="text-align:center; padding:40px;"><div class="spinner" style="margin: 0 auto 10px;"></div>A buscar extratos na base de dados...</div>`;
+    
+    try {
+        const res = await fetch("{{ url_for('protheus_logs.get_anomalies') }}");
+        if (res.redirected && res.url.includes('login')) { window.location.href = res.url; return; }
+        const data = await res.json();
+        
+        if (data.stats && data.stats.length > 0) {
+            let statsHtml = '';
+            data.stats.forEach(s => {
+                statsHtml += `
+                <div class="stat-card">
+                    <div class="stat-number">${s.count}</div>
+                    <div class="small-muted" style="font-weight: bold;">${escapeHtml(s.keyword)}</div>
+                </div>`;
+            });
+            stats.innerHTML = statsHtml;
+        } else {
+            stats.innerHTML = `<div class="stat-card" style="border-color: #10b981;"><div class="stat-number" style="color: #10b981;">0</div><div class="small-muted" style="font-weight: bold;">Nenhum erro configurado detetado.</div></div>`;
+        }
+        
+        if (data.anomalies && data.anomalies.length > 0) {
+            let cardsHtml = '';
+            data.anomalies.forEach(a => {
+                cardsHtml += `
+                <div class="anomaly-card">
+                    <div class="anomaly-header">
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <span style="background-color: #ef4444; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">${escapeHtml(a.keyword)}</span>
+                            <span style="color: #f8fafc; font-weight: bold; font-size: 14px;">💻 ${escapeHtml(a.server_name)} | ⚙️ ${escapeHtml(a.service_name)}</span>
+                        </div>
+                        <div style="color: #94a3b8; font-size: 12px; font-family: monospace;">⏱️ Detetado a: ${a.timestamp}</div>
+                    </div>
+                    <div class="anomaly-body">${escapeHtml(a.stack_trace)}</div>
+                </div>`;
+            });
+            list.innerHTML = cardsHtml;
+        } else {
+            list.innerHTML = `<div style="text-align: center; padding: 40px; color: var(--text-muted);">Nenhum Stack Trace capturado. Verifique as suas configurações de Radar.</div>`;
+        }
+        
+    } catch(e) {
+        list.innerHTML = `<div style="color: #ef4444; text-align: center; padding: 20px;">Falha ao carregar as anomalias.</div>`;
+    }
+}
+
+// === MOTOR DA MODAL DE CONFIGURAÇÃO (NOVO) ===
+function openRadarConfig() {
+    const list = document.getElementById("radarConfigList");
+    list.innerHTML = "";
+    
+    if (allInstances.length === 0) {
+        list.innerHTML = "<div class='small-muted' style='text-align:center;'>Nenhum serviço localizado na rede.</div>";
+    } else {
+        allInstances.forEach(inst => {
+            const isIgn = inst.is_ignored;
+            const btnClass = isIgn ? "background: transparent; color: #ef4444; border: 1px solid #ef4444;" : "background: #10b981; color: white; border: none;";
+            const btnText = isIgn ? "🔴 Ignorado" : "🟢 A Monitorizar";
+
+            list.innerHTML += `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-body);">
+                <div>
+                    <div style="font-weight: bold; color: var(--text-main); font-size: 14px;">${escapeHtml(inst.name)}</div>
+                    <div style="color: var(--text-muted); font-size: 11px;">💻 ${escapeHtml(inst.server_name)} | Chave: ${escapeHtml(inst.service_key)}</div>
+                </div>
+                <button onclick="toggleRadarIgnore('${inst.server}', '${inst.service_key}', this)" style="padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; width: 120px; font-size: 11px; outline: none; ${btnClass}">
+                    ${btnText}
+                </button>
+            </div>`;
+        });
+    }
+    document.getElementById("radarConfigModal").style.display = "flex";
+}
+
+async function toggleRadarIgnore(server_address, service_name, btnEl) {
+    btnEl.innerText = "⏳...";
+    btnEl.style.opacity = "0.7";
+    
+    try {
+        const res = await fetch("{{ url_for('protheus_logs.toggle_radar') }}", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ server_address, service_name })
+        });
+        const data = await res.json();
+        
+        // Atualiza a memória global
+        const inst = allInstances.find(i => i.server === server_address && i.service_key === service_name);
+        if(inst) inst.is_ignored = data.ignored;
+
+        if(data.ignored) {
+            btnEl.innerText = "🔴 Ignorado";
+            btnEl.style.background = "transparent";
+            btnEl.style.color = "#ef4444";
+            btnEl.style.border = "1px solid #ef4444";
+        } else {
+            btnEl.innerText = "🟢 A Monitorizar";
+            btnEl.style.background = "#10b981";
+            btnEl.style.color = "white";
+            btnEl.style.border = "none";
+        }
+    } catch(e) {
+        alert("Erro de comunicação ao alterar o Radar.");
+    } finally {
+        btnEl.style.opacity = "1";
+    }
+}
+
+// === MOTOR DE LEITURA MANUAL ===
+let currentServer = null; let currentExePath = null; let currentName = null; let currentRawContent = ""; 
+
+window.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const res = await fetch("{{ url_for('protheus_logs.scan_instances') }}");
+        if (res.redirected && res.url.includes('login')) { window.location.href = res.url; return; }
+        
+        const data = await res.json();
+        allInstances = data.instances || []; 
+        
+        const list = document.getElementById("instancesList");
+        list.innerHTML = "";
+
+        if(allInstances.length > 0) {
+            allInstances.forEach((inst, idx) => {
+                const btn = document.createElement("button");
+                btn.className = "inst-btn";
+                btn.innerHTML = `
+                    <div style="font-weight: bold; font-size: 14px;">${escapeHtml(inst.name)}</div>
+                    <div class="small-muted" style="font-size: 11px; margin-top: 2px;">🖥️ ${escapeHtml(inst.server_name)} (${escapeHtml(inst.server)})</div>
+                `;
+                btn.onclick = () => {
+                    document.querySelectorAll('.inst-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    openLog(inst.server, inst.exe_path, inst.name);
+                };
+                list.appendChild(btn);
+            });
+        } else {
+            list.innerHTML = `<div class="small-muted">Nenhum serviço AppServer/DBAccess localizado nos servidores.</div>`;
+        }
+    } catch(e) {}
+});
+
+function escapeHtml(s){
+  if(s === null || s === undefined) return "";
+  return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+}
+
+function applyHighlights(text, highlights){
+  const lines = (text || "").split("\n");
+  return lines.map(line => {
+    let safeLine = escapeHtml(line);
+    for (const h of (highlights || [])) {
+      if (safeLine.toUpperCase().includes(h.keyword.toUpperCase())) {
+        return `<div class="log-line" style="background-color:${h.bg}; color:${h.fg}; padding: 2px 5px; font-weight: bold;">${safeLine}</div>`;
+      }
+    }
+    return `<div class="log-line">${safeLine}</div>`;
+  }).join("");
+}
+
+function refreshCurrentLog() {
+    if (currentServer && currentExePath && currentName) openLog(currentServer, currentExePath, currentName);
+}
+
+async function openLog(server, exe_path, name){
+  currentServer = server; currentExePath = exe_path; currentName = name;
+  
+  const viewer = document.getElementById("logViewer");
+  const linesCount = document.getElementById("logLinesSelect").value; 
+  
+  document.getElementById("logTitle").innerText = `Lendo Log: ${name}`;
+  document.getElementById("logPath").innerText = `A enviar comando para ler as últimas ${linesCount} linhas...`;
+  document.getElementById("btnDownload").disabled = true; 
+  
+  viewer.innerHTML = `
+    <div style="color: #22c55e; text-align: center; margin-top: 200px; font-family: monospace;">
+        <div class="spinner" style="margin: 0 auto 15px; border-color: #22c55e; border-right-color: transparent;"></div>
+        >_ A estabelecer ligação remota e a ler ficheiro...
+    </div>`;
+
+  try {
+      const res = await fetch("{{ url_for('protheus_logs.view_log') }}", {
+        method:"POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ server, exe_path, lines: linesCount }) 
+      });
+      if (res.redirected && res.url.includes('login')) { window.location.href = res.url; return; }
+      
+      const data = await res.json();
+      currentRawContent = data.content || ""; 
+      
+      document.getElementById("logPath").innerText = `📁 ${data.log_path || "Caminho desconhecido"}`;
+      viewer.innerHTML = applyHighlights(currentRawContent, data.highlights || []);
+      
+      setTimeout(() => { viewer.scrollTo({ top: viewer.scrollHeight, behavior: 'smooth' }); }, 100);
+      if (currentRawContent !== "Log está vazio.") document.getElementById("btnDownload").disabled = false;
+      
+  } catch(e) {
+      viewer.innerHTML = `<div style="color: #ef4444; padding: 20px;">Falha crítica ao tentar ler o log no servidor.</div>`;
+      document.getElementById("logPath").innerText = "Erro de ligação";
+  }
+}
+
+function downloadLog() {
+    if (!currentRawContent) return;
+    const dataStr = currentRawContent.replace(/\r?\n/g, "\r\n"); 
+    const blob = new Blob([dataStr], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    
+    const dateStr = new Date().toISOString().replace(/T/, '_').replace(/:/g, '').split('.')[0];
+    const safeName = currentName.replace(/[^a-z0-9]/gi, '_'); 
+    
+    link.download = `Log_${safeName}_${dateStr}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+async function addKw(){
+  const keyword = document.getElementById("kwInput").value.trim();
+  if(!keyword) return;
+  await fetch("{{ url_for('protheus_logs.add_keyword') }}", {
+    method:"POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({keyword})
+  });
+  window.location.reload();
+}
+
+async function delKw(id){
+  await fetch(`/protheus-logs/keywords/${id}`, { method:"DELETE" });
+  window.location.reload();
+}
+
+document.getElementById("kwInput").addEventListener("keypress", function(event) {
+  if (event.key === "Enter") { event.preventDefault(); addKw(); }
+});
+</script>
+{% endblock %}

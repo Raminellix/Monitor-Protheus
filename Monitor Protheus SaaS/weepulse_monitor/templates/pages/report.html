@@ -1,0 +1,324 @@
+{% extends "layout.html" %}
+{% block title %}Relatório Gerencial | Weepulse{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+  <div>
+    <h1 class="h1" style="margin-bottom: 5px;">Relatório Gerencial de Infraestrutura</h1>
+    <p class="sub">Visão global dos recursos, crescimento do banco de dados e usuários no Broker.</p>
+  </div>
+  <div style="display: flex; gap: 10px;">
+      <button class="btn secondary" onclick="printReportPDF()" id="btnPrint" style="width: auto !important;" disabled>🖨️ Salvar PDF</button>
+      
+      <button class="btn secondary" onclick="loadReportData()" id="btnRefresh" style="width: auto !important;">🔄 Gerar / Atualizar</button>
+      <button class="btn" onclick="sendReportEmail()" id="btnEmail" style="width: auto !important; background-color: #10b981; border: none;" disabled>✉️ Enviar E-mail</button>
+  </div>
+</div>
+
+<div id="busyOverlay" style="position: fixed; inset: 0; background: rgba(15, 18, 25, 0.8); display: none; align-items: center; justify-content: center; z-index: 9999;">
+  <div style="background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 14px; padding: 25px 30px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); text-align: center;">
+      <div style="width: 30px; height: 30px; border-radius: 50%; border: 4px solid var(--border-color); border-top-color: #3b82f6; animation: spin 1s linear infinite; margin: 0 auto 15px;"></div>
+      <b style="font-size: 16px; display: block; margin-bottom: 5px;">A compilar relatório...</b>
+      <span style="font-size: 13px; color: var(--text-muted);">Consultando servidores, SQL e o Totvs Broker.</span>
+  </div>
+</div>
+<style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+
+<div id="reportContainer" style="display: none; flex-direction: column; gap: 20px; padding: 10px; font-family: Arial, Helvetica, sans-serif; background-color: #f8fafc; color: #334155;">
+    
+    <div style="background-color: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid #6366f1; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; margin-bottom: 15px; color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; font-size: 16px;">⚙️ Resumo de Configurações Ativas</h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <tr>
+                <td style="padding: 8px 0; width: 33%; vertical-align: top;">
+                    <span style="color: #64748b; display: block; font-size: 12px; margin-bottom: 4px;">Banco de Dados (SQL):</span>
+                    <b id="lblSql" style="color: #0f172a;"></b>
+                </td>
+                <td style="padding: 8px 0; width: 33%; vertical-align: top;">
+                    <span style="color: #64748b; display: block; font-size: 12px; margin-bottom: 4px;">Servidor de Alertas (SMTP):</span>
+                    <b id="lblSmtp" style="color: #0f172a;"></b>
+                </td>
+                <td style="padding: 8px 0; width: 33%; vertical-align: top;">
+                    <span style="color: #64748b; display: block; font-size: 12px; margin-bottom: 4px;">Credencial de Rede (WinRM):</span>
+                    <b id="lblWinrm" style="color: #0f172a;"></b>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div style="background-color: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid #f59e0b; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; margin-bottom: 15px; color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; font-size: 16px;">🗄️ Crescimento do Banco (Gatilho Horário)</h3>
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
+                <thead>
+                    <tr>
+                        <th style="background-color: #f1f5f9; padding: 10px; border: 1px solid #cbd5e1; color: #1e293b;">Tabela Física</th>
+                        <th style="background-color: #f1f5f9; padding: 10px; border: 1px solid #cbd5e1; color: #1e293b;">Descrição</th>
+                        <th style="background-color: #f1f5f9; padding: 10px; border: 1px solid #cbd5e1; color: #1e293b; text-align: center;">Registos Atuais</th>
+                        <th style="background-color: #f1f5f9; padding: 10px; border: 1px solid #cbd5e1; color: #1e293b; text-align: center;">Crescimento (+1h)</th>
+                        <th style="background-color: #f1f5f9; padding: 10px; border: 1px solid #cbd5e1; color: #1e293b; text-align: right;">Última Leitura</th>
+                    </tr>
+                </thead>
+                <tbody id="tableGrowthBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div style="background-color: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid #10b981; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; margin-bottom: 15px; color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; font-size: 16px;">👥 Usuários Conectados (AppServer Broker)</h3>
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+                <thead id="brokerHead"><tr><th style="background-color: #f1f5f9; padding: 10px; border: 1px solid #cbd5e1;">A procurar broker na rede...</th></tr></thead>
+                <tbody id="brokerBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div style="background-color: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid #3b82f6; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; margin-bottom: 15px; color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; font-size: 16px;">💻 Saúde da Infraestrutura e Top 10 Processos</h3>
+        <div id="serversHealthBody" style="display: flex; flex-direction: column; gap: 20px;"></div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function escapeHtml(s) {
+    return (s || "").toString().replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+async function loadReportData() {
+    document.getElementById("busyOverlay").style.display = "flex";
+    document.getElementById("btnRefresh").disabled = true;
+    document.getElementById("btnEmail").disabled = true;
+    document.getElementById("btnPrint").disabled = true;
+    
+    try {
+        const res = await fetch("{{ url_for('report.get_report_data') }}");
+        const data = await res.json();
+        
+        if (data.ok) {
+            
+            // 1. Configurações
+            document.getElementById("lblSql").innerText = data.configs.sql;
+            document.getElementById("lblSmtp").innerText = data.configs.smtp;
+            document.getElementById("lblWinrm").innerText = data.configs.winrm;
+            
+            // 2. Crescimento
+            const tblBody = document.getElementById("tableGrowthBody");
+            tblBody.innerHTML = "";
+            data.tables.forEach(t => {
+                const isGrowth = t.growth > 0;
+                const isReduction = t.growth < 0;
+                const growthStr = isGrowth ? `+${t.growth}` : `${t.growth}`;
+                const growthColor = isGrowth ? '#ef4444' : (isReduction ? '#10b981' : '#64748b');
+                
+                tblBody.innerHTML += `
+                    <tr>
+                        <td style="padding: 10px; border: 1px solid #e2e8f0; color: #0f172a;"><b>${escapeHtml(t.table)}</b></td>
+                        <td style="padding: 10px; border: 1px solid #e2e8f0; color: #475569;">${escapeHtml(t.description)}</td>
+                        <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center; color: #0f172a;">${t.current.toLocaleString('pt-BR')}</td>
+                        <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: center; font-weight: bold; color: ${growthColor};">${growthStr}</td>
+                        <td style="padding: 10px; border: 1px solid #e2e8f0; text-align: right; color: #64748b;">${escapeHtml(t.last_update)}</td>
+                    </tr>
+                `;
+            });
+            
+            // 3. Broker
+            const bHead = document.getElementById("brokerHead");
+            const bBody = document.getElementById("brokerBody");
+            bHead.innerHTML = ""; bBody.innerHTML = "";
+            
+            const users = data.broker ? data.broker.users : [];
+            const exactKeys = data.broker && data.broker.keys ? data.broker.keys : [];
+            
+            if (users && users.length > 0) {
+                const keysToUse = exactKeys.length > 0 ? exactKeys : Object.keys(users[0]);
+                
+                let headTr = "<tr>";
+                keysToUse.forEach(k => { headTr += `<th style="background-color: #f1f5f9; padding: 10px; border: 1px solid #cbd5e1; color: #1e293b;">${escapeHtml(k).toUpperCase()}</th>`; });
+                headTr += "</tr>";
+                bHead.innerHTML = headTr;
+                
+                users.forEach(u => {
+                    let bodyTr = "<tr>";
+                    keysToUse.forEach(k => { bodyTr += `<td style="padding: 8px 10px; border: 1px solid #e2e8f0; color: #334155;">${escapeHtml(u[k]) || '-'}</td>`; });
+                    bodyTr += "</tr>";
+                    bBody.innerHTML += bodyTr;
+                });
+            } else {
+                bHead.innerHTML = `<tr><th style="background-color: #f1f5f9; padding: 10px; border: 1px solid #cbd5e1; color: #1e293b;">Status do Broker</th></tr>`;
+                bBody.innerHTML = `<tr><td style="padding: 20px; text-align:center; color: #64748b; border: 1px solid #e2e8f0;">Nenhum usuário conectado ou falha de comunicação com o endpoint.</td></tr>`;
+            }
+            
+            // 4. Saúde dos Servidores
+            const srvBody = document.getElementById("serversHealthBody");
+            srvBody.innerHTML = "";
+            
+            data.health.forEach(s => {
+                
+                let topCpuHtml = "<div style='color:#64748b; font-size:12px; padding:10px;'>Sem dados de processos CPU</div>";
+                if(s.top_cpu_processes && s.top_cpu_processes.length > 0) {
+                    topCpuHtml = `<table style="width: 100%; border-collapse: collapse; font-size: 12px; background-color: #ffffff;">
+                        <tr>
+                            <th style="padding: 8px; border: 1px solid #e2e8f0; background-color: #f1f5f9; color: #1e293b; text-align: left;">Processo (Top 10)</th>
+                            <th style="padding: 8px; border: 1px solid #e2e8f0; background-color: #f1f5f9; color: #1e293b; text-align: right;">CPU</th>
+                        </tr>`;
+                    s.top_cpu_processes.forEach(p => {
+                        topCpuHtml += `<tr>
+                            <td style="padding: 8px; border: 1px solid #e2e8f0; color: #334155;">${escapeHtml(p.name)} (PID ${p.pid})</td>
+                            <td style="padding: 8px; border: 1px solid #e2e8f0; color: #ef4444; font-weight: bold; text-align: right;">${p.cpu_percent}%</td>
+                        </tr>`;
+                    });
+                    topCpuHtml += `</table>`;
+                }
+
+                let topMemHtml = "<div style='color:#64748b; font-size:12px; padding:10px;'>Sem dados de processos de Memória</div>";
+                if(s.top_mem_processes && s.top_mem_processes.length > 0) {
+                    topMemHtml = `<table style="width: 100%; border-collapse: collapse; font-size: 12px; background-color: #ffffff;">
+                        <tr>
+                            <th style="padding: 8px; border: 1px solid #e2e8f0; background-color: #f1f5f9; color: #1e293b; text-align: left;">Processo (Top 10)</th>
+                            <th style="padding: 8px; border: 1px solid #e2e8f0; background-color: #f1f5f9; color: #1e293b; text-align: right;">RAM (WS)</th>
+                        </tr>`;
+                    s.top_mem_processes.forEach(p => {
+                        topMemHtml += `<tr>
+                            <td style="padding: 8px; border: 1px solid #e2e8f0; color: #334155;">${escapeHtml(p.name)} (PID ${p.pid})</td>
+                            <td style="padding: 8px; border: 1px solid #e2e8f0; color: #3b82f6; font-weight: bold; text-align: right;">${p.working_set_mb} MB</td>
+                        </tr>`;
+                    });
+                    topMemHtml += `</table>`;
+                }
+                
+                srvBody.innerHTML += `
+                    <div style="border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; background-color: #f8fafc; margin-bottom: 20px;">
+                        
+                        <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; border-bottom: 1px solid #cbd5e1;">
+                            <tr>
+                                <td style="padding-bottom: 12px; vertical-align: middle;">
+                                    <b style="color: #0f172a; font-size: 16px; margin: 0;">${escapeHtml(s.server_name)}</b> 
+                                    <span style="font-size: 12px; color: #64748b; margin-left: 5px;">(${escapeHtml(s.server_address)})</span>
+                                </td>
+                                <td style="padding-bottom: 12px; vertical-align: middle; text-align: right;">
+                                    <div style="display: inline-block; font-weight: bold; font-size: 14px; background-color: #ffffff; padding: 6px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                                        <span style="color: #ef4444; margin-right: 15px;">Total CPU: ${s.cpu_percent}%</span>
+                                        <span style="color: #3b82f6;">Total RAM: ${s.mem_percent}%</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        </table>
+                        
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr>
+                                <td style="width: 50%; vertical-align: top; padding-right: 10px;">
+                                    <b style="font-size: 13px; color: #1e293b; display: block; margin-bottom: 10px; border-left: 3px solid #ef4444; padding-left: 8px;">🔥 Consumo CPU</b>
+                                    ${topCpuHtml}
+                                </td>
+                                <td style="width: 50%; vertical-align: top; padding-left: 10px;">
+                                    <b style="font-size: 13px; color: #1e293b; display: block; margin-bottom: 10px; border-left: 3px solid #3b82f6; padding-left: 8px;">🧠 Consumo Memória</b>
+                                    ${topMemHtml}
+                                </td>
+                            </tr>
+                        </table>
+                        
+                    </div>
+                `;
+            });
+            
+            document.getElementById("reportContainer").style.display = "flex";
+            document.getElementById("btnEmail").disabled = false;
+            document.getElementById("btnPrint").disabled = false;
+        } else {
+            alert("Falha ao gerar o relatório.");
+        }
+    } catch (e) {
+        alert("Erro de comunicação com o servidor.");
+    } finally {
+        document.getElementById("busyOverlay").style.display = "none";
+        document.getElementById("btnRefresh").disabled = false;
+    }
+}
+
+async function sendReportEmail() {
+    document.getElementById("busyOverlay").style.display = "flex";
+    document.getElementById("btnEmail").disabled = true;
+    
+    const rawHtml = document.getElementById("reportContainer").outerHTML;
+    
+    try {
+        const res = await fetch("{{ url_for('report.send_email') }}", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ html_content: rawHtml })
+        });
+        const data = await res.json();
+        
+        if (data.ok) {
+            alert("Relatório enviado com sucesso!");
+        } else {
+            alert("Falha ao enviar: " + data.message);
+        }
+    } catch(e) {
+        alert("Erro de comunicação ao tentar enviar o e-mail.");
+    } finally {
+        document.getElementById("busyOverlay").style.display = "none";
+        document.getElementById("btnEmail").disabled = false;
+    }
+}
+
+// NOVA FUNÇÃO: Imprimir para PDF mantendo o formato do Email
+function printReportPDF() {
+    const reportHtml = document.getElementById("reportContainer").outerHTML;
+    const now = new Date();
+    const dataHoraStr = now.toLocaleDateString('pt-BR') + ' às ' + now.toLocaleTimeString('pt-BR');
+    
+    // Abre uma nova janela invisível/temporária
+    const printWindow = window.open('', '_blank', 'width=1000,height=800');
+    
+    // Escreve a estrutura HTML e força o navegador a imprimir cores de fundo (-webkit-print-color-adjust)
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+            <head>
+                <title>Relatório Gerencial - Weepulse</title>
+                <style>
+                    body { 
+                        font-family: Arial, Helvetica, sans-serif; 
+                        margin: 0; 
+                        padding: 20px; 
+                        background-color: #fff;
+                    }
+                    /* OBRIGA o Chrome/Edge/Firefox a pintar o fundo das tabelas no PDF */
+                    * {
+                        -webkit-print-color-adjust: exact !important;
+                        color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                </style>
+            </head>
+            <body>
+                <div style="text-align: center; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 2px solid #e2e8f0;">
+                    <h2 style="color: #1e293b; margin-bottom: 5px;">STATUS DA INFRAESTRUTURA TOTVS PROTHEUS</h2>
+                    <p style="color: #64748b; font-size: 13px; margin-top: 0;">Relatório Weepulse gerado em ${dataHoraStr}</p>
+                </div>
+                ${reportHtml}
+                
+                <script>
+                    // Aguarda o HTML carregar e chama a caixa de impressão automaticamente
+                    window.onload = function() {
+                        setTimeout(function() {
+                            window.print();
+                            window.close();
+                        }, 300);
+                    };
+                <\/script>
+            </body>
+        </html>
+    `);
+    
+    printWindow.document.close();
+}
+
+window.onload = loadReportData;
+</script>
+{% endblock %}

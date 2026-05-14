@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Primeiro acesso | Gerenciador de ambiente Weepulse</title>
+
+  <link rel="icon" href="{{ url_for('static', filename='img/favicon.webp') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="{{ url_for('static', filename='css/theme.css') }}" rel="stylesheet">
+  
+  <script>
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    if (savedTheme === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  </script>
+
+  <style>
+    /* === VARIÁVEIS DO MODO ESCURO === */
+    :root {
+      --bg-body: #f4f4f9;
+      --bg-card: #ffffff;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --border-color: #e2e8f0;
+    }
+    [data-theme="dark"] {
+      --bg-body: #0f172a;       
+      --bg-card: #1e293b;       
+      --text-main: #f8fafc;     
+      --text-muted: #94a3b8;    
+      --border-color: #334155;  
+    }
+
+    body {
+      background-color: var(--bg-body) !important;
+      color: var(--text-main) !important;
+      transition: background-color 0.3s, color 0.3s;
+    }
+
+    .card {
+      background-color: var(--bg-card) !important;
+      border: 1px solid var(--border-color) !important;
+    }
+
+    .hTitle, .brandTitle, label { color: var(--text-main) !important; }
+    .subText, .brandSub { color: var(--text-muted) !important; }
+
+    /* === SOLUÇÃO DEFINITIVA DAS CAIXAS DE TEXTO === */
+    .control { background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; }
+    input:not([type="submit"]):not([type="button"]):not([type="hidden"]) {
+      background-color: #ffffff !important;
+      color: #0f172a !important;
+      border: 1px solid #cbd5e1 !important;
+      border-radius: 6px !important;
+      padding: 10px 12px !important;
+      width: 100% !important;
+      outline: none !important;
+      box-shadow: none !important;
+      box-sizing: border-box !important;
+      font-family: inherit;
+      transition: border-color 0.2s;
+    }
+    input:focus { border-color: #3b82f6 !important; }
+    input::placeholder { color: #94a3b8 !important; opacity: 1 !important; }
+
+    /* Estilos originais da página */
+    .wrap{ min-height:100vh; display:grid; place-items:center; padding:40px 16px; }
+    .authCard{ width:100%; max-width:520px; }
+    .brandAuth{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:12px; margin-bottom: 14px; }
+    .logoImg{
+      width: 216px; height: 216px; border-radius: 34px; object-fit: contain;
+      background: #ffffff; border: 1px solid var(--border-color);
+      padding: 22px; box-shadow: 0 18px 44px rgba(0, 0, 0, .12);
+    }
+    .hTitle{ margin: 10px 0 6px; font-size: 26px; letter-spacing: -0.6px; font-weight: 900; }
+    .subText{ margin: 0 0 18px; font-size: 13px; line-height: 1.6; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <main class="card authCard">
+      <header class="brandAuth">
+        <img class="logoImg" src="{{ url_for('static', filename='img/favicon.webp') }}" alt="Logo Weepulse" />
+        <p class="brandTitle">Gerenciador de ambiente Weepulse</p>
+        <p class="brandSub">Primeiro acesso</p>
+      </header>
+
+      <h1 class="hTitle">Criar usuário</h1>
+      <p class="subText">Este cadastro é feito apenas uma vez.</p>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <form method="post" style="display:grid; gap:12px;">
+        <div class="field">
+          <label for="username">Usuário</label>
+          <div class="control">
+            <input id="username" name="username" placeholder="admin" required />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="password">Senha</label>
+          <div class="control">
+            <input id="password" name="password" type="password" placeholder="••••••••" required />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="password2">Confirmar senha</label>
+          <div class="control">
+            <input id="password2" name="password2" type="password" placeholder="••••••••" required />
+          </div>
+        </div>
+
+        <button class="btn" type="submit" style="margin-top: 10px;">Criar Usuário</button>
+      </form>
+    </main>
+  </div>
+</body>
+</html>

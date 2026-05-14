@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Weepulse Monitor Protheus{% endblock %}</title>
+
+  <link rel="icon" href="{{ url_for('static', filename='img/favicon.webp') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="{{ url_for('static', filename='css/theme.css') }}" rel="stylesheet">
+
+  <script>
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    if (savedTheme === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  </script>
+
+  <style>
+    /* CORES DO TEMA CLARO (Padrão) */
+    :root {
+      --bg-body: #f4f4f9;
+      --bg-card: #ffffff;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --border-color: #e2e8f0;
+      --nav-hover: #f1f5f9;
+    }
+
+    /* CORES DO TEMA ESCURO */
+    [data-theme="dark"] {
+      --bg-body: #0f172a;       
+      --bg-card: #1e293b;       
+      --text-main: #f8fafc;     
+      --text-muted: #94a3b8;    
+      --border-color: #334155;  
+      --nav-hover: #334155;     
+    }
+
+    /* APLICAÇÃO DAS VARIÁVEIS SOBRE O LAYOUT GLOBAL */
+    body {
+      background-color: var(--bg-body) !important;
+      color: var(--text-main) !important;
+      transition: background-color 0.3s, color 0.3s;
+      min-height: 100vh;
+      background-attachment: fixed !important;
+    }
+
+    /* Força os cartões principais e sidebar a respeitarem o tema */
+    .card, .sidebarCard {
+      background-color: var(--bg-card) !important;
+      border-color: var(--border-color) !important;
+      color: var(--text-main) !important;
+      transition: background-color 0.3s, border-color 0.3s;
+    }
+
+    .small-muted, .sub {
+      color: var(--text-muted) !important;
+    }
+
+    h1, h2, h3, .h1, .cardTitle, label, b, .brandTitle {
+      color: var(--text-main) !important;
+    }
+
+    /* === SOLUÇÃO DEFINITIVA DAS CAIXAS DE TEXTO === */
+    .control {
+      background: transparent !important;
+      border: none !important;
+      padding: 0 !important;
+      box-shadow: none !important;
+    }
+
+    input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="hidden"]), 
+    select, 
+    textarea {
+      background-color: #ffffff !important;
+      color: #0f172a !important;
+      border: 1px solid #cbd5e1 !important;
+      border-radius: 6px !important;
+      padding: 10px 12px !important;
+      width: 100% !important;
+      outline: none !important;
+      box-shadow: none !important;
+      box-sizing: border-box !important;
+      font-family: inherit;
+      transition: border-color 0.2s;
+    }
+
+    input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="hidden"]):focus, 
+    select:focus, 
+    textarea:focus {
+      border-color: #3b82f6 !important;
+    }
+
+    input::placeholder, textarea::placeholder {
+      color: #94a3b8 !important;
+      opacity: 1 !important;
+    }
+
+    input[type="checkbox"] {
+      width: 18px !important;
+      height: 18px !important;
+      accent-color: #3b82f6 !important;
+      border: none !important;
+      background-color: transparent !important;
+      padding: 0 !important;
+    }
+
+    /* Ajuste de links do menu lateral no modo escuro */
+    .nav a:not(.danger):hover {
+      background-color: var(--nav-hover) !important;
+      color: var(--text-main) !important;
+    }
+    
+    [data-theme="dark"] .nav a:not(.danger) {
+        color: #e2e8f0;
+    }
+
+    /* ========================================= */
+    /* ESTILOS DO NOVO TOGGLE SWITCH (CHAVINHA)  */
+    /* ========================================= */
+    .theme-switch {
+      display: inline-block;
+      height: 24px;
+      position: relative;
+      width: 44px;
+      margin: 0;
+    }
+    .theme-switch input {
+      display: none !important;
+    }
+    .slider {
+      background-color: #cbd5e1;
+      bottom: 0;
+      cursor: pointer;
+      left: 0;
+      position: absolute;
+      right: 0;
+      top: 0;
+      transition: .3s;
+    }
+    .slider:before {
+      background-color: #ffffff;
+      bottom: 3px;
+      content: "";
+      height: 18px;
+      left: 3px;
+      position: absolute;
+      transition: .3s;
+      width: 18px;
+    }
+    input:checked + .slider {
+      background-color: #3b82f6; /* Fica azul quando ativado */
+    }
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+    .slider.round {
+      border-radius: 24px;
+    }
+    .slider.round:before {
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container-app">
+    <aside class="sidebar">
+      <div class="sidebarCard">
+        <div class="brand">
+          <img src="{{ url_for('static', filename='img/favicon.webp') }}" alt="Logo Weepulse" />
+          <div>
+            <p class="brandTitle">Gerenciador de ambiente Weepulse</p>
+            <p class="brandSub">Monitor Protheus</p>
+          </div>
+        </div>
+
+		<nav class="nav">
+          <a href="{{ url_for('services.services_home') }}">1) Serviços Protheus</a>
+          <a href="{{ url_for('servers.servers_home') }}">2) Servidores</a>
+          <a href="{{ url_for('requirements.requirements_home') }}">3) Requisitos TOTVS</a>
+          <a href="{{ url_for('protheus_logs.logs_home') }}">4) Logs Protheus</a>
+          <a href="{{ url_for('dbmon.db_monitor_home') }}">5) Monitor Banco</a>
+          <a href="{{ url_for('doc_env.doc_home') }}">6) Documentação do Ambiente</a> 
+          <a href="{{ url_for('noc.noc_dashboard') }}" class="nav-item">7) Dashboard NOC</a>
+          <a href="{{ url_for('noc.noc_topology') }}" class="nav-item">8) Mapa de Topologia</a>
+          <a href="{{ url_for('report.report_view') }}">9) Relatório Gerencial</a>
+		  <a href="{{ url_for('alerts_snap.alerts_view') }}">10) Alertas </a>
+		  <a href="{{ url_for('sql_explorer.sql_home') }}">11) SQL Explorer</a>
+          <a href="{{ url_for('settings.settings_home') }}">12) Configurações</a>
+          <a class="danger" href="{{ url_for('auth.logout') }}">Sair</a>
+        </nav>
+
+        <div class="small-muted" style="margin-top:12px; text-align: center;">
+          Usuário: <b>{{ current_user.username }}</b>
+        </div>
+
+        <div style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 15px; display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-size: 13px; font-weight: bold; color: var(--text-main);">🌙 Modo Escuro</span>
+            <label class="theme-switch" for="checkboxTheme">
+                <input type="checkbox" id="checkboxTheme" onchange="toggleThemeSwitch(this)" />
+                <div class="slider round"></div>
+            </label>
+        </div>
+
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="page">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+  
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+      const toggleSwitch = document.getElementById('checkboxTheme');
+      
+      // Se o usuário tinha salvo o tema escuro, a chavinha já carrega ligada
+      if (currentTheme === 'dark') {
+        toggleSwitch.checked = true;
+      } else {
+        toggleSwitch.checked = false;
+      }
+    });
+
+    function toggleThemeSwitch(element) {
+      const root = document.documentElement;
+      
+      if (element.checked) {
+        root.setAttribute('data-theme', 'dark');
+        localStorage.setItem('theme', 'dark');
+      } else {
+        root.removeAttribute('data-theme');
+        localStorage.setItem('theme', 'light');
+      }
+    }
+  </script>
+  
+  {% block scripts %}{% endblock %}
+</body>
+</html>

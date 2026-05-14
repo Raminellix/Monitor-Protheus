@@ -1,0 +1,629 @@
+{% extends "layout.html" %}
+{% block title %}Topologia / CFG View | Weepulse{% endblock %}
+
+{% block content %}
+<script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+
+<style>
+  .topology-container {
+    width: 100%;
+    height: 70vh;
+    background-color: #000;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    position: relative;
+    overflow: hidden;
+  }
+
+  #network-canvas {
+    width: 100%;
+    height: 100%;
+    border-radius: 12px;
+    outline: none;
+    background: #000;
+  }
+
+  .vis-network:focus { outline: none; }
+
+  .topology-container:fullscreen {
+    width: 100vw !important;
+    height: 100vh !important;
+    border-radius: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .topology-container:fullscreen #network-canvas {
+    border-radius: 0 !important;
+  }
+
+  /* ============================================================
+     Barra de controlo: agora respeita seu tema (via CSS vars)
+     - usa var(--bg-card) / var(--text-color) / var(--border-color)
+     - fallback para quando essas vars não existirem
+     ============================================================ */
+  .control-bar {
+    width: 100%;
+    background: var(--bg-card, rgba(2, 6, 23, 0.78));
+    border: 1px solid var(--border-color, rgba(148, 163, 184, 0.25));
+    color: var(--text-color, #e5e7eb);
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 12px 35px rgba(0,0,0,0.15);
+    margin-bottom: 12px;
+  }
+
+  /* se seu tema já define backdrop/blur no card, pode remover.
+     aqui colocamos leve blur sem quebrar o tema */
+  .control-bar {
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+
+  .control-bar .title {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .6px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    color: var(--text-muted, rgba(100, 116, 139, 1));
+  }
+
+  .control-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+    gap: 10px;
+    align-items: end;
+  }
+
+  @media (max-width: 1100px) {
+    .control-grid { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
+  }
+
+  @media (max-width: 720px) {
+    .control-grid { grid-template-columns: 1fr; }
+  }
+
+  .control-bar label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted, rgba(100, 116, 139, 1));
+    margin-bottom: 6px;
+  }
+
+  .control-bar select {
+    width: 100%;
+    background: var(--bg-input, rgba(15, 23, 42, 0.25));
+    color: var(--text-color, #e5e7eb);
+    border: 1px solid var(--border-color, rgba(148, 163, 184, 0.35));
+    border-radius: 10px;
+    padding: 8px 10px;
+    outline: none;
+    font-size: 13px;
+  }
+
+  /* Para tema claro: ajuda a evitar select “transparente demais” */
+  html:not([data-theme="dark"]) .control-bar select {
+    background: var(--bg-input, rgba(255, 255, 255, 0.9));
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .control-bar button {
+    background: var(--primary, #3b82f6);
+    color: var(--primary-contrast, #fff);
+    border: 0;
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    min-width: 140px;
+  }
+
+  .control-bar button.secondary {
+    background: var(--bg-soft, rgba(148, 163, 184, 0.12));
+    color: var(--text-color, #e5e7eb);
+    border: 1px solid var(--border-color, rgba(148, 163, 184, 0.35));
+  }
+
+  .control-bar button:hover { filter: brightness(1.06); }
+</style>
+
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 14px; flex-wrap: wrap; gap: 15px;">
+  <div>
+    <h1 class="h1" style="margin-bottom:5px;">8) Topologia (modos de visualização)</h1>
+    <p class="sub">Altere layout, atualização, fundo e tela cheia (barra acima do grafo).</p>
+  </div>
+
+  <div style="text-align:right; border-left: 1px solid var(--border-color); padding-left: 15px;">
+    <div class="small-muted" id="lastUpdate" style="margin-bottom: 6px;">A desenhar grafo...</div>
+    <div id="refreshBadge" style="background-color: var(--primary, #3b82f6); color: var(--primary-contrast, #fff); padding:4px 12px; border-radius:20px; font-size:11px; font-weight:bold; display:inline-block; letter-spacing:0.5px;">
+      AUTO-REFRESH: 10s
+    </div>
+  </div>
+</div>
+
+<div class="control-bar">
+  <div class="title">Configuração</div>
+
+  <div class="control-grid">
+    <div>
+      <label for="viewMode">Modo de visualização</label>
+      <select id="viewMode">
+        <option value="force_bh">Force (Barnes-Hut)</option>
+        <option value="force_fa2">Force (ForceAtlas2)</option>
+        <option value="hier_ud">Hierárquico (UD - Top/Down)</option>
+        <option value="hier_lr">Hierárquico (LR - Left/Right)</option>
+      </select>
+    </div>
+
+    <div>
+      <label for="refreshInterval">Atualização automática</label>
+      <select id="refreshInterval">
+        <option value="off">Off</option>
+        <option value="5">5s</option>
+        <option value="10" selected>10s</option>
+        <option value="30">30s</option>
+        <option value="60">60s</option>
+      </select>
+    </div>
+
+    <div>
+      <label for="bgMode">Cor de fundo</label>
+      <select id="bgMode">
+        <option value="auto">Auto (tema)</option>
+        <option value="black">Preto</option>
+        <option value="white">Branco</option>
+      </select>
+    </div>
+
+    <div class="btn-row">
+      <button type="button" id="btnFit">Ajustar (Fit)</button>
+      <button type="button" class="secondary" id="btnRefreshNow">Atualizar</button>
+    </div>
+
+    <div class="btn-row">
+      <button type="button" id="btnFullscreen">Tela cheia</button>
+      <button type="button" class="secondary" id="btnReset">Reset</button>
+    </div>
+  </div>
+</div>
+
+<div class="topology-container" id="topologyContainer">
+  <div id="network-canvas"></div>
+</div>
+
+<script>
+let network = null;
+let nodes = new vis.DataSet();
+let edges = new vis.DataSet();
+let refreshTimer = null;
+
+const STORAGE_KEY_VIEW = "weepulse_topology_view_mode";
+const STORAGE_KEY_REFRESH = "weepulse_topology_refresh_interval";
+const STORAGE_KEY_BG = "weepulse_topology_bg_mode";
+
+/* ---------------------------
+   THEME COLORS (light/dark) for graph nodes
+---------------------------- */
+function getThemePalette(bgColor) {
+  const isLight = (bgColor.toLowerCase() === "#fff" || bgColor.toLowerCase() === "#ffffff" || bgColor.toLowerCase() === "white");
+
+  if (isLight) {
+    return {
+      text: "#0f172a",
+      edgeText: "#0f172a",
+      edge: "#475569",
+      dashed: "#64748b",
+      nodeBg: "#ffffff",
+      nodeBorder: "#2563eb",
+      okBorder: "#16a34a",
+      badBorder: "#dc2626",
+      entryBg: "#ffffff",
+      entryBorder: "#7c3aed",
+      serviceBg: "#ffffff"
+    };
+  }
+
+  return {
+    text: "#ffffff",
+    edgeText: "#e5e7eb",
+    edge: "#94a3b8",
+    dashed: "#64748b",
+    nodeBg: "#111827",
+    nodeBorder: "#60a5fa",
+    okBorder: "#10b981",
+    badBorder: "#ef4444",
+    entryBg: "#0b1220",
+    entryBorder: "#a78bfa",
+    serviceBg: "#0b1220"
+  };
+}
+
+/* ---------------------------
+   MODOS (opções do vis-network)
+---------------------------- */
+function getOptionsForMode(mode) {
+  const base = {
+    nodes: { shape: 'box', margin: 12, borderWidth: 2, shadow: true },
+    edges: { width: 2, shadow: true, arrows: { to: { enabled: true, scaleFactor: 0.9 } }, font: { strokeWidth: 0, size: 12, align: 'middle' } },
+    interaction: { hover: true, tooltipDelay: 200, navigationButtons: true, keyboard: true }
+  };
+
+  if (mode === "force_fa2") {
+    return {
+      ...base,
+      layout: { improvedLayout: true },
+      edges: { ...base.edges, smooth: { type: 'continuous' } },
+      physics: {
+        enabled: true,
+        solver: 'forceAtlas2Based',
+        forceAtlas2Based: {
+          gravitationalConstant: -60,
+          centralGravity: 0.01,
+          springLength: 130,
+          springConstant: 0.08,
+          damping: 0.5,
+          avoidOverlap: 0.6
+        },
+        stabilization: { iterations: 200 }
+      }
+    };
+  }
+
+  if (mode === "hier_ud" || mode === "hier_lr") {
+    const direction = (mode === "hier_ud") ? "UD" : "LR";
+    return {
+      ...base,
+      layout: {
+        hierarchical: {
+          enabled: true,
+          direction,
+          sortMethod: 'directed',
+          levelSeparation: 120,
+          nodeSpacing: 170,
+          treeSpacing: 200
+        }
+      },
+      edges: {
+        ...base.edges,
+        smooth: {
+          type: 'cubicBezier',
+          forceDirection: (direction === "UD" ? 'vertical' : 'horizontal'),
+          roundness: 0.35
+        }
+      },
+      physics: { enabled: false }
+    };
+  }
+
+  return {
+    ...base,
+    layout: { improvedLayout: true },
+    edges: { ...base.edges, smooth: { type: 'continuous' } },
+    physics: {
+      enabled: true,
+      solver: 'barnesHut',
+      barnesHut: {
+        gravitationalConstant: -3200,
+        centralGravity: 0.22,
+        springLength: 150,
+        springConstant: 0.04,
+        damping: 0.10,
+        avoidOverlap: 0.2
+      },
+      stabilization: { iterations: 200 }
+    }
+  };
+}
+
+function applyViewMode(mode, { doFit = true } = {}) {
+  if (!network) return;
+  network.setOptions(getOptionsForMode(mode));
+  localStorage.setItem(STORAGE_KEY_VIEW, mode);
+
+  if (doFit) {
+    setTimeout(() => {
+      try { network.fit({ animation: { duration: 300, easingFunction: 'easeInOutQuad' } }); } catch (_) {}
+    }, 50);
+  }
+}
+
+/* ---------------------------
+   AUTO-REFRESH
+---------------------------- */
+function setRefreshBadge(intervalValue) {
+  const badge = document.getElementById("refreshBadge");
+  if (!badge) return;
+
+  if (intervalValue === "off") {
+    badge.textContent = "AUTO-REFRESH: OFF";
+    badge.style.backgroundColor = "#64748b";
+    return;
+  }
+
+  badge.textContent = `AUTO-REFRESH: ${intervalValue}s`;
+  badge.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--primary')?.trim() || "#3b82f6";
+}
+
+function applyRefreshInterval(intervalValue) {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+
+  localStorage.setItem(STORAGE_KEY_REFRESH, intervalValue);
+  setRefreshBadge(intervalValue);
+
+  if (intervalValue === "off") return;
+
+  const seconds = parseInt(intervalValue, 10);
+  if (Number.isNaN(seconds) || seconds <= 0) return;
+
+  refreshTimer = setInterval(fetchTopologyData, seconds * 1000);
+}
+
+/* ---------------------------
+   BACKGROUND MODE
+---------------------------- */
+function computeBgColor(bgMode) {
+  if (bgMode === "black") return "#000";
+  if (bgMode === "white") return "#fff";
+
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  return isDark ? "#000" : "#fff";
+}
+
+function applyBackgroundMode(bgMode) {
+  localStorage.setItem(STORAGE_KEY_BG, bgMode);
+
+  const container = document.getElementById("topologyContainer");
+  const canvas = document.getElementById("network-canvas");
+  const bg = computeBgColor(bgMode);
+
+  if (container) container.style.backgroundColor = bg;
+  if (canvas) canvas.style.background = bg;
+
+  const palette = getThemePalette(bg);
+
+  if (network) {
+    network.setOptions({
+      nodes: { font: { color: palette.text, face: 'Arial', size: 13 }, color: { background: palette.nodeBg, border: palette.nodeBorder } },
+      edges: { color: { color: palette.edge }, font: { color: palette.edgeText, strokeWidth: 0, size: 12 } }
+    });
+  }
+
+  // Ajusta nós atuais
+  const allNodes = nodes.get();
+  const allEdges = edges.get();
+
+  const updatedNodes = allNodes.map(n => {
+    const color = n.color || {};
+    const newColor = { ...(typeof color === "object" ? color : {}), background: palette.nodeBg };
+
+    if (n.id === "cfg_entry") {
+      newColor.background = palette.entryBg;
+      newColor.border = palette.entryBorder;
+    }
+    return { ...n, color: newColor, font: { ...(n.font || {}), color: palette.text } };
+  });
+
+  const updatedEdges = allEdges.map(e => {
+    const color = e.color || {};
+    const keepCustom = (typeof color === "object" && color.color);
+    const newColor = { ...(typeof color === "object" ? color : {}), ...(keepCustom ? {} : { color: palette.edge }) };
+    return { ...e, color: newColor, font: { ...(e.font || {}), color: palette.edgeText, strokeWidth: 0 } };
+  });
+
+  nodes.update(updatedNodes);
+  edges.update(updatedEdges);
+  if (network) setTimeout(() => { try { network.redraw(); } catch (_) {} }, 20);
+}
+
+/* ---------------------------
+   FULLSCREEN
+---------------------------- */
+async function toggleFullscreen() {
+  const container = document.getElementById("topologyContainer");
+  if (!container) return;
+
+  try {
+    if (!document.fullscreenElement) await container.requestFullscreen({ navigationUI: "hide" });
+    else await document.exitFullscreen();
+  } catch (_) {}
+}
+
+function updateFullscreenButton() {
+  const btn = document.getElementById("btnFullscreen");
+  if (!btn) return;
+  btn.textContent = document.fullscreenElement ? "Sair tela cheia" : "Tela cheia";
+
+  if (network) {
+    setTimeout(() => {
+      try { network.redraw(); network.fit({ animation: { duration: 200 } }); } catch (_) {}
+    }, 80);
+  }
+}
+
+/* ---------------------------
+   INIT
+---------------------------- */
+function initNetwork() {
+  const container = document.getElementById('network-canvas');
+  const data = { nodes, edges };
+
+  network = new vis.Network(container, data, getOptionsForMode("force_bh"));
+
+  const viewSelect = document.getElementById("viewMode");
+  const savedView = localStorage.getItem(STORAGE_KEY_VIEW) || "force_bh";
+  viewSelect.value = savedView;
+  applyViewMode(savedView, { doFit: false });
+  viewSelect.addEventListener("change", () => applyViewMode(viewSelect.value));
+
+  const refreshSelect = document.getElementById("refreshInterval");
+  const savedRefresh = localStorage.getItem(STORAGE_KEY_REFRESH) || "10";
+  refreshSelect.value = savedRefresh;
+  applyRefreshInterval(savedRefresh);
+  refreshSelect.addEventListener("change", () => applyRefreshInterval(refreshSelect.value));
+
+  const bgSelect = document.getElementById("bgMode");
+  const savedBg = localStorage.getItem(STORAGE_KEY_BG) || "auto";
+  bgSelect.value = savedBg;
+  applyBackgroundMode(savedBg);
+  bgSelect.addEventListener("change", () => applyBackgroundMode(bgSelect.value));
+
+  document.getElementById("btnFit").addEventListener("click", () => {
+    try { network.fit({ animation: { duration: 300, easingFunction: 'easeInOutQuad' } }); } catch (_) {}
+  });
+  document.getElementById("btnRefreshNow").addEventListener("click", () => fetchTopologyData());
+  document.getElementById("btnReset").addEventListener("click", () => {
+    viewSelect.value = "force_bh";
+    refreshSelect.value = "10";
+    bgSelect.value = "auto";
+    applyViewMode("force_bh");
+    applyRefreshInterval("10");
+    applyBackgroundMode("auto");
+  });
+  document.getElementById("btnFullscreen").addEventListener("click", () => toggleFullscreen());
+
+  document.addEventListener("fullscreenchange", updateFullscreenButton);
+  updateFullscreenButton();
+
+  // Se seu botão de tema altera data-theme dinamicamente, isso atualiza a barra e o grafo
+  // quando o usuário trocar o tema (auto).
+  const themeObserver = new MutationObserver(() => {
+    const currentBg = document.getElementById("bgMode")?.value || "auto";
+    if (currentBg === "auto") applyBackgroundMode("auto");
+  });
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+}
+
+/* ---------------------------
+   DATA FETCH
+---------------------------- */
+async function fetchTopologyData() {
+  try {
+    const res = await fetch("{{ url_for('noc.get_noc_data') }}");
+    if (res.redirected && res.url.includes('login')) { window.location.href = res.url; return; }
+    if (!res.ok) { document.getElementById("lastUpdate").innerText = `Falha ao obter dados (HTTP ${res.status})`; return; }
+
+    const data = await res.json();
+    drawFlowGraph(data.servers || [], data.services || []);
+    document.getElementById("lastUpdate").innerText = `Motor Sincronizado: ${data.last_update || '-'}`;
+  } catch (e) {
+    document.getElementById("lastUpdate").innerText = "Falha de ligação ao motor!";
+  }
+}
+
+/* ---------------------------
+   DRAW GRAPH
+---------------------------- */
+function drawFlowGraph(serverList, serviceList) {
+  const bgMode = document.getElementById("bgMode")?.value || (localStorage.getItem(STORAGE_KEY_BG) || "auto");
+  const bg = computeBgColor(bgMode);
+  const palette = getThemePalette(bg);
+
+  const newNodes = [];
+  const newEdges = [];
+
+  newNodes.push({
+    id: 'cfg_entry',
+    label: '<b>ENTRY</b>\n(motor)',
+    shape: 'ellipse',
+    color: { background: palette.entryBg, border: palette.entryBorder },
+    borderWidth: 3,
+    font: { color: palette.text }
+  });
+
+  const servicesByServer = {};
+  for (const svc of serviceList) {
+    const key = svc.server_address || 'unknown';
+    (servicesByServer[key] ||= []).push(svc);
+  }
+
+  for (const srv of serverList) {
+    const isOffline = (srv.latency === "Timeout" || srv.latency === "Erro");
+    const border = isOffline ? palette.badBorder : palette.nodeBorder;
+    const srvId = `srv_${srv.server_address}`;
+
+    newNodes.push({
+      id: srvId,
+      label: `💻 <b>${srv.server_name}</b>\n${srv.server_address}`,
+      color: { background: palette.nodeBg, border },
+      borderWidth: isOffline ? 4 : 2,
+      font: { color: palette.text }
+    });
+
+    newEdges.push({
+      from: 'cfg_entry',
+      to: srvId,
+      dashes: true,
+      color: { color: palette.dashed },
+      arrows: 'to',
+      font: { color: palette.edgeText, strokeWidth: 0 }
+    });
+
+    const list = servicesByServer[srv.server_address] || [];
+    for (const svc of list) {
+      const isRunning = (svc.status || '').includes("RUNNING");
+      const isHung = (svc.port_status || '').includes("Travado");
+      const hasProblem = (!isRunning || isHung);
+
+      const svcBorder = hasProblem ? palette.badBorder : palette.okBorder;
+
+      let icon = '⚙️';
+      if (svc.type === "DBACCESS") icon = '����️';
+      if (svc.type === "LICENSE") icon = '🔑';
+
+      let labelStr = `${icon} <b>${svc.service_name}</b>`;
+      if (svc.port) labelStr += `\nPorta: ${svc.port}`;
+      if (hasProblem) labelStr += `\n(FALHA CRÍTICA)`;
+
+      const nodeId = `svc_${srv.server_address}_${svc.service_key}`;
+
+      newNodes.push({
+        id: nodeId,
+        label: labelStr,
+        title: `Log: ${svc.debug_ini || '-'}`,
+        color: { background: palette.serviceBg, border: svcBorder },
+        borderWidth: hasProblem ? 4 : 2,
+        font: { color: palette.text }
+      });
+
+      newEdges.push({
+        from: srvId,
+        to: nodeId,
+        color: { color: svcBorder },
+        arrows: 'to',
+        label: hasProblem ? 'error' : 'ok',
+        font: { color: palette.edgeText, strokeWidth: 0 }
+      });
+    }
+  }
+
+  nodes.clear();
+  edges.clear();
+  nodes.update(newNodes);
+  edges.update(newEdges);
+
+  const currentMode = document.getElementById("viewMode")?.value || (localStorage.getItem(STORAGE_KEY_VIEW) || "force_bh");
+  applyViewMode(currentMode, { doFit: true });
+
+  applyBackgroundMode(bgMode);
+}
+
+/* ---------------------------
+   START
+---------------------------- */
+window.onload = () => {
+  initNetwork();
+  fetchTopologyData();
+};
+</script>
+{% endblock %}

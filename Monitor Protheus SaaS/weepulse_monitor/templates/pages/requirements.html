@@ -1,0 +1,239 @@
+{% extends "layout.html" %}
+{% block title %}Requisitos de Hardware | Weepulse{% endblock %}
+
+{% block content %}
+<h1 class="h1">3) Homologação de Requisitos TOTVS</h1>
+<p class="sub">Compare os recursos atuais dos servidores com a exigência mínima oficial da TOTVS e teste a latência da rede.</p>
+
+<style>
+  .status-ok { background-color: #10b981; color: #fff; padding: 4px 8px; border-radius: 6px; font-weight: bold; font-size: 12px; }
+  .status-falha { background-color: #ef4444; color: #fff; padding: 4px 8px; border-radius: 6px; font-weight: bold; font-size: 12px; }
+  .status-atencao { background-color: #f59e0b; color: #fff; padding: 4px 8px; border-radius: 6px; font-weight: bold; font-size: 12px; }
+  
+  .table-req th { background-color: #3b82f6 !important; font-weight: 600; color: #ffffff !important; }
+  .section-title { font-size: 18px; color: var(--text-main); margin-top: 30px; margin-bottom: 15px; border-bottom: 2px solid var(--border-color); padding-bottom: 8px; }
+  
+  .table-req { width: 100%; border-collapse: collapse; }
+  .table-req td { border-bottom: 1px solid var(--border-color); padding: 10px; }
+</style>
+
+<div class="card" style="margin-bottom: 20px;">
+  <div style="display:flex; gap:15px; align-items:flex-end; flex-wrap: wrap;">
+    <div class="field" style="flex: 1; min-width: 200px;">
+      <label><b>Selecione o Release Protheus-TOTVS</b></label>
+      <div class="control">
+        <select id="releaseSelect" style="width: 100%; padding: 8px; border-radius: 6px;">
+          {% for r in releases %}
+            <option value="{{ r }}">{{ r }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    
+    <button class="btn btn-start" style="background-color: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; white-space: nowrap;" onclick="runCheck()">
+      ▶ Executar Validação de Ambiente
+    </button>
+  </div>
+</div>
+
+<div class="card" style="padding: 15px; margin-bottom: 20px; box-shadow: none;">
+    <h4 style="margin-top: 0; margin-bottom: 10px; font-size: 14px; color: var(--text-main);">📌 Glossário de Validação (Lógica)</h4>
+    <div style="display: flex; gap: 20px; font-size: 13px; flex-wrap: wrap;">
+        <div><span class="status-ok">OK</span> <span class="small-muted" style="margin-left: 5px;">Atende com folga (Superior ao Mínimo Exigido).</span></div>
+        <div><span class="status-atencao">ATENÇÃO</span> <span class="small-muted" style="margin-left: 5px;">Atende, mas está <b>exatamente igual</b> ao limite mínimo.</span></div>
+        <div><span class="status-falha">FALHA</span> <span class="small-muted" style="margin-left: 5px;">Abaixo do mínimo. Risco de gargalo e lentidão no Protheus.</span></div>
+    </div>
+</div>
+
+<div id="loadingBox" style="display:none; text-align:center; padding: 40px;" class="small-muted">
+    <div class="spinner" style="margin: 0 auto 15px; border-color: #3b82f6; border-right-color: transparent;"></div>
+    A coletar hardwares e a avaliar latências de rede. Isto pode levar alguns segundos...
+</div>
+
+<div id="resultsContainer"></div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function escapeHtml(s){
+  if (s === null || s === undefined) return "";
+  return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+}
+
+// NOVO: Função para calcular a cor com base no valor de ms
+function getLatencyColor(valStr, limitMs) {
+    if (!valStr) return "#ef4444"; // Vermelho para vazio
+    const v = String(valStr).toLowerCase();
+    if (v.includes("falha") || v.includes("erro") || v.includes("timeout")) return "#ef4444"; // Vermelho
+    
+    // Extrai apenas os números da string (ex: "129ms" vira 129)
+    const ms = parseInt(v.replace(/[^0-9]/g, ''));
+    if (!isNaN(ms) && ms > limitMs) {
+        return "#ef4444"; // Vermelho se ultrapassar o limite
+    }
+    return "#10b981"; // Verde se estiver OK
+}
+
+async function runCheck() {
+    const release = document.getElementById("releaseSelect").value;
+    const container = document.getElementById("resultsContainer");
+    const loading = document.getElementById("loadingBox");
+    const btn = document.querySelector("button[onclick='runCheck()']");
+    
+    container.innerHTML = "";
+    loading.style.display = "block";
+    btn.disabled = true;
+    btn.innerText = "Aguarde...";
+
+    try {
+        const res = await fetch("{{ url_for('requirements.scan_requirements') }}", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ release: release })
+        });
+        
+        const data = await res.json();
+        if(data.ok) {
+            renderResults(data);
+        } else {
+            container.innerHTML = `<div style="color:#ef4444; font-weight:bold;">Erro ao processar validação.</div>`;
+        }
+    } catch(e) {
+        container.innerHTML = `<div style="color:#ef4444; font-weight:bold;">Falha de comunicação com o servidor.</div>`;
+    } finally {
+        loading.style.display = "none";
+        btn.disabled = false;
+        btn.innerHTML = "▶ Executar Validação de Ambiente";
+    }
+}
+
+function renderResults(data) {
+    const container = document.getElementById("resultsContainer");
+    let html = "";
+
+    const buildTable = (servers, title) => {
+        if(servers.length === 0) return "";
+        let sectionHtml = `<h2 class="section-title">${title}</h2>`;
+        
+        servers.forEach(s => {
+            let rows = "";
+            s.evaluation.forEach(ev => {
+                let badge = "";
+                if(ev.status === "OK") badge = `<span class="status-ok">OK</span>`;
+                else if(ev.status === "FALHA") badge = `<span class="status-falha">FALHA</span>`;
+                else badge = `<span class="status-atencao">ATENÇÃO</span>`;
+
+                rows += `
+                    <tr>
+                        <td style="color: var(--text-main);"><b>${escapeHtml(ev.label)}</b></td>
+                        <td style="font-weight: 500; color: var(--text-main);">${escapeHtml(ev.found)}</td>
+                        <td class="small-muted">${escapeHtml(ev.min)}</td>
+                        <td style="color:#3b82f6; font-weight:bold;">${escapeHtml(ev.rec)}</td>
+                        <td>${badge}</td>
+                    </tr>
+                `;
+            });
+
+            // LATÊNCIA INTERNA DINÂMICA
+            let latencyRows = "";
+            for (const [ip, time] of Object.entries(s.latency_internal)) {
+                let intColor = getLatencyColor(time, 5); // Limite de 5ms para rede local
+                latencyRows += `
+                <div style="font-size: 13px; margin-top: 4px; display: flex; justify-content: space-between; align-items: center; color: var(--text-main);">
+                    <span>Para ${escapeHtml(ip)}:</span>
+                    <span style="color:${intColor}; font-weight:bold;">${escapeHtml(time)}</span>
+                </div>
+                <div class="small-muted" style="font-size: 10px; text-align: right; margin-bottom: 4px;">Meta Recomendada: &lt; 5ms</div>
+                `;
+            }
+            if(latencyRows === "") latencyRows = "<div class='small-muted' style='font-size:11px; margin-top:4px;'>Nenhum outro servidor na rede.</div>";
+
+            // LATÊNCIA EXTERNA DINÂMICA
+            let extColor = getLatencyColor(s.latency_external, 45); // Limite de 45ms para internet
+
+            // TABELA DE/PARA DO BANCO DE DADOS
+            let dbHtml = "";
+            if(s.db_metrics && s.db_metrics.length > 0) {
+                let dbRows = "";
+                s.db_metrics.forEach(dbm => {
+                    let dbBadge = "";
+                    if(dbm.status === "OK") dbBadge = `<span class="status-ok">OK</span>`;
+                    else dbBadge = `<span class="status-falha">FALHA</span>`;
+
+                    dbRows += `
+                        <tr>
+                            <td style="color: var(--text-main);"><b>${escapeHtml(dbm.label)}</b></td>
+                            <td style="font-family: monospace; font-size: 13px; color: #3b82f6; font-weight: bold;">${escapeHtml(dbm.found)}</td>
+                            <td class="small-muted" style="font-size: 13px;">${escapeHtml(dbm.min)}</td>
+                            <td>${dbBadge}</td>
+                        </tr>
+                    `;
+                });
+                
+                dbHtml = `
+                <div style="margin-top: 20px; background-color: var(--bg-body); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+                    <h4 style="margin:0 0 10px 0; font-size: 15px; color: var(--text-main);">🗄️ Validação do Banco de Dados SQL</h4>
+                    <table class="table table-req" style="margin-top: 5px;">
+                        <thead>
+                            <tr>
+                                <th>Regra de Negócio DB</th>
+                                <th>Encontrado no Banco</th>
+                                <th>Exigência TOTVS</th>
+                                <th>Validação</th>
+                            </tr>
+                        </thead>
+                        <tbody>${dbRows}</tbody>
+                    </table>
+                </div>`;
+            }
+
+            sectionHtml += `
+            <div class="card" style="box-shadow:none; margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
+                    <div>
+                        <h3 style="margin:0; font-size:20px; color: var(--text-main);">${escapeHtml(s.name)}</h3>
+                        <div class="small-muted">${escapeHtml(s.address)}</div>
+                    </div>
+                    
+                    <div style="text-align: right; background-color: var(--bg-body); padding: 12px 18px; border-radius: 6px; border: 1px solid var(--border-color); min-width: 260px;">
+                        <div style="font-size: 12px; border-bottom: 1px solid var(--border-color); padding-bottom: 6px; margin-bottom: 6px; color: var(--text-main);">
+                            <b>Latência Externa (registro.br):</b> 
+                            <span style="color:${extColor}; font-weight:bold; font-size: 13px;">${escapeHtml(s.latency_external)}</span>
+                            <div class="small-muted" style="font-size: 10px; margin-top: 2px;">Meta Recomendada: &lt; 45ms</div>
+                        </div>
+                        <div style="font-size: 12px; text-align: left; color: var(--text-main);"><b>Latência Interna (Rede):</b></div>
+                        ${latencyRows}
+                    </div>
+                </div>
+
+                <table class="table table-req" style="margin-top: 10px;">
+                    <thead>
+                        <tr>
+                            <th>Recurso Analisado</th>
+                            <th>Encontrado na Máquina</th>
+                            <th>Mínimo (TOTVS)</th>
+                            <th>Recomendado (+30%)</th>
+                            <th>Validação</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                    </tbody>
+                </table>
+                ${dbHtml}
+            </div>
+            `;
+        });
+        return sectionHtml;
+    };
+
+    html += buildTable(data.erp, "🖥️ AppServers ERP (Avaliação e Requisitos)");
+    html += buildTable(data.db, "🗄️ Servidores de Banco de Dados (Avaliação e Requisitos)");
+
+    if(html === "") html = "<div class='small-muted'>Nenhum servidor encontrado no cadastro.</div>";
+    
+    container.innerHTML = html;
+}
+</script>
+{% endblock %}

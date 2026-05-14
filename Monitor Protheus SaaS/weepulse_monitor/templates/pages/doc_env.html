@@ -1,0 +1,271 @@
+{% extends "layout.html" %}
+{% block title %}Documentação de Ambiente | Weepulse{% endblock %}
+
+{% block content %}
+<h1 class="h1">6) Documentação do Ambiente Protheus</h1>
+<p class="sub">O sistema localizará automaticamente todos os serviços TOTVS instalados no servidor selecionado, lendo portas, bancos e Brokers.</p>
+
+<div class="card" style="margin-bottom: 20px;">
+  <form id="docForm" style="display: flex; gap: 20px; align-items: center; flex-wrap: wrap;">
+    
+    <div class="field" style="flex: 1; min-width: 250px;">
+      <label><b>Servidor Alvo</b></label>
+      <div class="control">
+        <select id="serverSelect" required style="padding: 10px; border-radius: 6px; width: 100%;">
+          <option value="">Selecione o servidor na rede...</option>
+          {% for s in servers %}
+            <option value="{{ s.address }}">{{ s.name }} ({{ s.address }})</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="field" style="display: flex; align-items: center; gap: 10px; margin-top: 15px;">
+        <input type="checkbox" id="updateDesc" style="width: 20px; height: 20px; cursor: pointer;">
+        <label for="updateDesc" style="margin: 0; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-main);">
+            Sincronizar as portas na <br>Descrição do Serviço no Windows?
+        </label>
+    </div>
+
+    <button class="btn" type="submit" id="btnGenerate" style="background-color: #3b82f6; width: auto; padding: 12px 24px; margin-top: 15px; font-size: 14px; font-weight: bold;">
+      ▶ Iniciar Varredura Inteligente
+    </button>
+  </form>
+</div>
+
+<div id="loadingBox" style="display:none; text-align:center; padding: 40px;" class="small-muted">
+    <div class="spinner" style="margin: 0 auto 15px; border-color: #3b82f6; border-right-color: transparent;"></div>
+    Mapeando os serviços do Windows e varrendo arquivos INI...
+</div>
+
+<div id="resultsContainer" style="display:flex; flex-direction:column; gap:20px;"></div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function escapeHtml(s){
+  if (s === null || s === undefined) return "";
+  return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+}
+
+// Helper genérico para desenhar a tabela de Informações de Serviço
+function renderServiceInfo(info) {
+    if (!info) return `<div class="small-muted" style="margin-bottom:15px;">Serviço do Windows não configurado (Instância via Console).</div>`;
+    return `
+    <table class="table" style="margin-bottom: 15px;">
+        <tr><td width="30%"><b>Nome Interno:</b></td><td>${escapeHtml(info.Name)}</td></tr>
+        <tr><td><b>Nome Exibição:</b></td><td>${escapeHtml(info.DisplayName)}</td></tr>
+        <tr><td><b>Descrição Atualizada:</b></td><td style="color: #3b82f6; font-weight: bold;">${escapeHtml(info.Description)}</td></tr>
+    </table>`;
+}
+
+document.getElementById("docForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const server = document.getElementById("serverSelect").value;
+    const updateDesc = document.getElementById("updateDesc").checked;
+    const container = document.getElementById("resultsContainer");
+    const loading = document.getElementById("loadingBox");
+    const btn = document.getElementById("btnGenerate");
+
+    container.innerHTML = "";
+    loading.style.display = "block";
+    btn.disabled = true;
+    btn.innerText = "Aguarde...";
+
+    try {
+        const res = await fetch("{{ url_for('doc_env.generate_doc') }}", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ server, updateDesc })
+        });
+        
+        const data = await res.json();
+        
+        if(data.ok && data.data && data.data.length > 0) {
+            renderDoc(data.data);
+        } else {
+            container.innerHTML = `<div class="card" style="border-left: 4px solid #ef4444; color: #ef4444;"><b>Aviso:</b> ${data.message || "Nenhum serviço TOTVS localizado neste servidor."}</div>`;
+        }
+    } catch(e) {
+        container.innerHTML = `<div class="card" style="border-left: 4px solid #ef4444; color: #ef4444;"><b>Erro Crítico:</b> Falha ao comunicar com o Backend.</div>`;
+    } finally {
+        loading.style.display = "none";
+        btn.disabled = false;
+        btn.innerText = "▶ Iniciar Varredura Inteligente";
+    }
+});
+
+function renderDoc(items) {
+    const container = document.getElementById("resultsContainer");
+    let html = "";
+
+    items.forEach(it => {
+        let serviceHeaderName = it.FolderName; 
+        if (it.ServiceInfo) {
+            if (it.ServiceInfo.DisplayName && it.ServiceInfo.DisplayName !== "(N/A)") {
+                serviceHeaderName = it.ServiceInfo.DisplayName;
+            } else if (it.ServiceInfo.Name) {
+                serviceHeaderName = it.ServiceInfo.Name;
+            }
+        }
+
+        // ==============================
+        // BLOCO: BROKER
+        // ==============================
+        if (it.Broker) {
+            html += `
+            <div class="card" style="border-left: 4px solid #8b5cf6;">
+                <h3 style="color: #8b5cf6; margin-top:0;">🌐 SERVIDOR BROKER: ${escapeHtml(it.FolderName)}</h3>
+                <div class="small-muted" style="margin-bottom:10px;">Caminho: ${escapeHtml(it.ExePath)}</div>
+                <div style="font-family: monospace; font-size: 13px; background: var(--bg-body); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+            `;
+            for (const [key, value] of Object.entries(it.Broker)) {
+                if(key !== "_OriginalName") {
+                    html += `<div style="color: var(--text-main);"><b>${escapeHtml(key)}:</b> ${escapeHtml(value)}</div>`;
+                }
+            }
+            html += `</div></div>`;
+            return;
+        }
+
+        // ==============================
+        // BLOCO: DBACCESS
+        // ==============================
+        if (it.Type === "DBACCESS") {
+            let svcHtml = renderServiceInfo(it.ServiceInfo);
+            
+            let licenseHtml = it.License ? `Servidor: <b>${escapeHtml(it.License.Server)}</b> | Porta: <b>${escapeHtml(it.License.Port)}</b>` : '<span class="small-muted">Não configurada.</span>';
+
+            let envsHtml = "";
+            it.DbAccessEnvs.forEach(env => {
+                envsHtml += `
+                <div style="background: var(--bg-body); padding: 12px; border: 1px solid var(--border-color); border-radius: 6px; margin-bottom: 8px; font-size: 13px; color: var(--text-main);">
+                    <b style="font-size: 14px; display:block; margin-bottom: 5px; color: #10b981;">[${escapeHtml(env.Name)}]</b>
+                    <span class="small-muted">Usuário de Banco:</span> ${escapeHtml(env.User || "Não definido")} <br>
+                    <span class="small-muted">Senha de Banco:</span> <span style="font-family: monospace; font-weight: bold; color: var(--text-main); letter-spacing: 2px;">${env.Password ? '********' : '<span class="small-muted" style="letter-spacing: normal;">Vazia</span>'}</span>
+                </div>`;
+            });
+
+            let driversHtml = "";
+            it.DbAccessDrivers.forEach(drv => {
+                let tags = "";
+                for (const [key, value] of Object.entries(drv)) {
+                    if (key !== "Name") tags += `<div style="font-size: 13px; color: var(--text-main);"><b>${escapeHtml(key)}:</b> ${escapeHtml(value)}</div>`;
+                }
+                driversHtml += `
+                <div style="background: var(--bg-body); padding: 12px; border: 1px solid var(--border-color); border-radius: 6px; margin-bottom: 8px; font-size: 13px;">
+                    <b style="font-size: 14px; display:block; margin-bottom: 5px;">[${escapeHtml(drv.Name)}]</b>
+                    ${tags}
+                </div>`;
+            });
+
+            html += `
+            <div class="card" style="border-left: 4px solid #10b981;">
+                <h3 style="color: #10b981; margin-top:0;">🗄️ DBACCESS: ${escapeHtml(serviceHeaderName)}</h3>
+                <div class="small-muted" style="margin-bottom:15px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+                    Caminho: ${escapeHtml(it.ExePath)}
+                </div>
+
+                <div class="grid cols2" style="gap: 20px;">
+                    <div>
+                        ${svcHtml}
+                        
+                        <h4 style="margin: 0 0 5px 0; color: var(--text-main);">Licença do DBAccess</h4>
+                        <div style="font-size: 13px; margin-bottom: 15px; color: var(--text-main);">
+                            ${licenseHtml}
+                        </div>
+
+                        <h4 style="margin: 10px 0 5px 0; color: var(--text-main);">Conexões de Banco de Dados</h4>
+                        ${envsHtml || '<div class="small-muted">Nenhuma conexão de banco encontrada.</div>'}
+                    </div>
+
+                    <div>
+                        <h4 style="margin: 0 0 5px 0; color: var(--text-main);">Configurações do Driver</h4>
+                        ${driversHtml || '<div class="small-muted">Nenhum Driver detalhado.</div>'}
+                    </div>
+                </div>
+            </div>`;
+            return;
+        }
+
+        // ==============================
+        // BLOCO: APPSERVER
+        // ==============================
+        let portsHtml = it.ConnectionPorts.map(p => `<span style="background:#3b82f6; color:#fff; padding:3px 8px; border-radius:4px; font-size:11px; font-weight:bold;">${escapeHtml(p.Type.toUpperCase())}: ${escapeHtml(p.Port)}</span>`).join(" ");
+        let wsHtml = it.WebServices.length > 0 ? it.WebServices.map(w => `<div style="color: #10b981; font-weight:bold;">✔️ Endereço WebService: [${escapeHtml(w)}]</div>`).join("") : `<div class="small-muted">Nenhum WebService ativo.</div>`;
+        let restHtml = it.RestEndpoint ? `<div style="color: #3b82f6; font-weight:bold; word-break: break-all;">🔗 ${escapeHtml(it.RestEndpoint)}</div>` : `<div class="small-muted">Nenhum Endpoint REST ativo.</div>`;
+        let jobsHtml = it.HasJobs ? `<span style="color:#f59e0b; font-weight:bold;">⚙️ Possui Jobs Ativos</span>` : `<span class="small-muted">Sem Jobs configurados.</span>`;
+        let svcHtml = renderServiceInfo(it.ServiceInfo);
+
+        let primaryEnvHtml = "";
+        if(it.PrimaryEnv) {
+            primaryEnvHtml = `<h4 style="margin: 0 0 5px 0;">Ambiente Principal: <span style="color:#10b981;">[${escapeHtml(it.PrimaryEnv.Name)}]</span></h4>`;
+            for (const [key, value] of Object.entries(it.PrimaryEnv)) {
+                if(key !== "Name") {
+                    primaryEnvHtml += `<div style="font-size: 13px; color: var(--text-main);"><b>${escapeHtml(key)}:</b> ${escapeHtml(value)}</div>`;
+                }
+            }
+        }
+
+        let addEnvHtml = "";
+        if(it.AddEnvs.length > 0) {
+            addEnvHtml = `<h4 style="margin: 15px 0 5px 0; color: #f59e0b;">Ambientes Adicionais</h4>`;
+            it.AddEnvs.forEach(env => {
+                addEnvHtml += `
+                <div style="background: var(--bg-body); padding: 8px; border: 1px solid var(--border-color); border-radius: 6px; margin-bottom: 5px; font-size: 13px; color: var(--text-main);">
+                    <b>[${escapeHtml(env.Name)}]</b><br>
+                    <span class="small-muted">Source:</span> ${escapeHtml(env.sourcepath)} <br>
+                    <span class="small-muted">RpoCustom:</span> ${escapeHtml(env.rpocustom)}
+                </div>`;
+            });
+        }
+
+        html += `
+        <div class="card" style="border-left: 4px solid #3b82f6;">
+            <h3 style="color: #3b82f6; margin-top:0;">🖥️ SERVIÇO: ${escapeHtml(serviceHeaderName)}</h3>
+            <div class="small-muted" style="margin-bottom:15px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+                Caminho: ${escapeHtml(it.ExePath)}
+            </div>
+
+            <div class="grid cols2" style="gap: 20px;">
+                <div>
+                    ${svcHtml}
+                    
+                    <h4 style="margin: 0 0 5px 0; color: var(--text-main);">Conexões e Portas</h4>
+                    <div style="margin-bottom: 15px;">${portsHtml || '<span class="small-muted">Nenhuma porta localizada.</span>'}</div>
+                    
+                    <h4 style="margin: 0 0 5px 0; color: var(--text-main);">Licença</h4>
+                    <div style="font-size: 13px; margin-bottom: 15px; color: var(--text-main);">
+                        ${it.License ? `Servidor: <b>${escapeHtml(it.License.Server)}</b> | Porta: <b>${escapeHtml(it.License.Port)}</b>` : '<span class="small-muted">Não configurada.</span>'}
+                    </div>
+
+                    <h4 style="margin: 0 0 5px 0; color: var(--text-main);">WebAgent</h4>
+                    <div style="font-size: 13px; margin-bottom: 15px; color: var(--text-main);">
+                        ${it.WebAgent ? `Versão: <b>${escapeHtml(it.WebAgent.Version)}</b> | Porta: <b>${escapeHtml(it.WebAgent.Port)}</b>` : '<span class="small-muted">Não configurado.</span>'}
+                    </div>
+                </div>
+
+                <div>
+                    <div style="margin-bottom: 15px;">${jobsHtml}</div>
+
+                    <h4 style="margin: 0 0 5px 0; color: var(--text-main);">WebService Padrão (Protheus)</h4>
+                    <div style="margin-bottom: 15px;">${wsHtml}</div>
+
+                    <h4 style="margin: 0 0 5px 0; color: var(--text-main);">API REST</h4>
+                    <div style="margin-bottom: 15px;">${restHtml}</div>
+
+                    <div style="background-color: var(--bg-body); border: 1px solid var(--border-color); padding: 15px; border-radius: 6px;">
+                        ${primaryEnvHtml}
+                        ${addEnvHtml}
+                    </div>
+                </div>
+            </div>
+        </div>
+        `;
+    });
+
+    container.innerHTML = html;
+}
+</script>
+{% endblock %}

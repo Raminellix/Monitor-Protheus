@@ -1,0 +1,825 @@
+{% extends "layout.html" %}
+{% block title %}Serviços Protheus | Weepulse{% endblock %}
+
+{% block content %}
+<div id="sirenBanner" style="display: none; background-color: #ef4444; color: white; text-align: center; padding: 12px; font-weight: 900; font-size: 20px; position: fixed; top: 0; left: 0; width: 100%; z-index: 10000; letter-spacing: 3px; box-shadow: 0 4px 15px rgba(239, 68, 68, 0.6);">
+  ⚠️ FALHA CRÍTICA: EXISTEM SERVIÇOS PARADOS ⚠️
+</div>
+
+<h1 class="h1">1) Monitorização de Serviços Protheus</h1>
+<p class="sub">Registe servidores (IP/Hostname) e ative o botão de <b style="color: #6366f1;">Auto-Healing</b> para recuperar serviços em baixo automaticamente.</p>
+
+<style>
+  /* Efeito de ecrã a piscar a vermelho */
+  @keyframes blinkScreenRed {
+    0% { box-shadow: inset 0 0 0px rgba(239, 68, 68, 0); }
+    50% { box-shadow: inset 0 0 120px rgba(239, 68, 68, 0.3); }
+    100% { box-shadow: inset 0 0 0px rgba(239, 68, 68, 0); }
+  }
+  body.siren-active {
+    animation: blinkScreenRed 1.5s infinite;
+  }
+
+  #busyOverlay { position: fixed; inset: 0; background: rgba(15, 18, 25, 0.7); display: none; align-items: center; justify-content: center; z-index: 9999; }
+  #busyBox { background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 14px; padding: 18px 20px; width: min(520px, calc(100vw - 40px)); box-shadow: 0 10px 40px rgba(0,0,0,0.35); }
+  #busyTitle { font-weight: 700; margin-bottom: 6px; }
+  #busyMsg { font-size: 14px; color: var(--text-muted); }
+  .spinner { width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--border-color); border-top-color: #3b82f6; animation: spin 0.9s linear infinite; flex: 0 0 auto; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .busyRow { display: flex; gap: 12px; align-items: center; }
+
+  #tblServices button.btn-action { color: #ffffff !important; border: none !important; padding: 6px 12px !important; border-radius: 6px !important; font-weight: 600 !important; cursor: pointer; width: auto !important; margin: 0 !important; font-size: 12px; transition: 0.2s; }
+  #tblServices button.btn-start { background-color: #10b981 !important; }
+  #tblServices button.btn-start:hover { background-color: #059669 !important; }
+  #tblServices button.btn-restart { background-color: #f59e0b !important; }
+  #tblServices button.btn-restart:hover { background-color: #d97706 !important; }
+  #tblServices button.btn-stop { background-color: #ef4444 !important; }
+  #tblServices button.btn-stop:hover { background-color: #dc2626 !important; }
+
+  #tblServices button.btn-monitor, #tblServices button.btn-ignore { padding: 6px 12px !important; border-radius: 6px !important; font-weight: bold !important; cursor: pointer; font-size: 11px; transition: 0.3s; width: 140px; border: 2px solid transparent !important; }
+  
+  /* Botão Auto-Healing */
+  #tblServices button.btn-monitor.on { background-color: #6366f1 !important; color: #ffffff !important; box-shadow: 0 0 8px rgba(99, 102, 241, 0.4); border-color: #4f46e5 !important;}
+  #tblServices button.btn-monitor.off { background-color: transparent !important; color: var(--text-muted) !important; border-color: var(--border-color) !important; }
+  #tblServices button.btn-monitor.off:hover { background-color: var(--border-color) !important; color: var(--text-main) !important; }
+  #tblServices button.btn-monitor:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  /* Botão Proteger (Ignorar) */
+  #tblServices button.btn-ignore.on { background-color: #f59e0b !important; color: #ffffff !important; box-shadow: 0 0 8px rgba(245, 158, 11, 0.4); border-color: #d97706 !important;}
+  #tblServices button.btn-ignore.off { background-color: transparent !important; color: var(--text-muted) !important; border-color: var(--border-color) !important; }
+  #tblServices button.btn-ignore.off:hover { background-color: var(--border-color) !important; color: var(--text-main) !important; }
+  #tblServices button.btn-ignore:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .status-badge { padding: 4px 8px !important; border-radius: 6px !important; font-weight: bold !important; font-size: 11px !important; display: inline-block !important; letter-spacing: 0.5px; color: #ffffff !important; }
+  .status-running { background-color: #10b981 !important; }
+  .status-stopped { background-color: #ef4444 !important; }
+  .status-other { background-color: #f59e0b !important; }
+  .status-healing { background-color: #8b5cf6 !important; animation: pulseText 1.5s infinite; }
+  
+  .server-header { background-color: rgba(148, 163, 184, 0.15); border-bottom: 2px solid var(--border-color); }
+  .server-header td { padding: 12px 15px !important; font-size: 14px; }
+  .server-header b { color: var(--text-main) !important; }
+  .server-header span.ip { color: var(--text-muted); font-size: 12px; margin-left: 10px; font-weight: normal; }
+  
+  .audit-input { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-body); color: var(--text-main); font-size: 13px; width: 100%; box-sizing: border-box; outline: none; }
+  .audit-input:focus { border-color: #3b82f6; }
+
+  /* Destaque da linha quando protegido */
+  tr.row-ignored td {
+      background-color: rgba(245, 158, 11, 0.08) !important;
+      border-bottom: 1px solid rgba(245, 158, 11, 0.2) !important;
+      transition: background-color 0.3s;
+  }
+</style>
+
+<div id="busyOverlay">
+  <div id="busyBox">
+    <div class="busyRow">
+      <div class="spinner" aria-hidden="true"></div>
+      <div>
+        <div id="busyTitle">A processar...</div>
+        <div id="busyMsg">Aguarde por favor</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="auditModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 10001; justify-content: center; align-items: center; padding: 20px;">
+    <div style="background: var(--bg-body); border: 1px solid var(--border-color); border-radius: 12px; width: 100%; max-width: 1200px; height: 85vh; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
+        
+        <div style="padding: 15px 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background-color: var(--bg-card); border-radius: 12px 12px 0 0;">
+            <h2 style="margin: 0; color: var(--text-main); font-size: 18px;">📜 Histórico de Auditoria do Sistema</h2>
+            <button onclick="closeAuditModal()" style="background: transparent; border: none; font-size: 24px; cursor: pointer; color: var(--text-muted); line-height: 1;">&times;</button>
+        </div>
+        
+        <div style="padding: 15px 20px; border-bottom: 1px solid var(--border-color); background: var(--bg-card); display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: grid; grid-template-columns: 80px 1fr 1fr 2fr 2fr; gap: 10px; align-items: center;">
+                <div>
+                    <label class="small-muted" style="font-size: 10px; display: block; margin-bottom: 2px;">Limite</label>
+                    <input type="number" id="auditLimit" class="audit-input" value="100" min="10" max="5000">
+                </div>
+                <div>
+                    <label class="small-muted" style="font-size: 10px; display: block; margin-bottom: 2px;">Autor</label>
+                    <input type="text" id="auditAuthor" class="audit-input" placeholder="ex: admin">
+                </div>
+                <div>
+                    <label class="small-muted" style="font-size: 10px; display: block; margin-bottom: 2px;">Tipo de Ação</label>
+                    <select id="auditAction" class="audit-input">
+                        <option value="">Todas</option>
+                        <option value="MANUAL_START">Início Manual</option>
+                        <option value="MANUAL_STOP">Paragem Manual</option>
+                        <option value="MANUAL_RESTART">Reinício Manual</option>
+                        <option value="AUTO_HEALING">Auto-Healing (Motor)</option>
+                        <option value="CONFIG_CHANGE">Mudança Regras</option>
+                        <option value="SCHEDULED">Agendamentos</option>
+                        <option value="SERVER">Servidores (Adic/Rem)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="small-muted" style="font-size: 10px; display: block; margin-bottom: 2px;">Alvo (IP ou Nome)</label>
+                    <input type="text" id="auditTarget" class="audit-input" placeholder="ex: 10.80.6.105">
+                </div>
+                <div>
+                    <label class="small-muted" style="font-size: 10px; display: block; margin-bottom: 2px;">Palavra nos Detalhes</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="auditDetails" class="audit-input" placeholder="ex: falha, sucesso...">
+                        <button onclick="loadAuditData()" style="background-color: #3b82f6; color: white; border: none; border-radius: 6px; padding: 0 15px; font-weight: bold; cursor: pointer;">🔍 Buscar</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="display: flex; justify-content: flex-end;">
+                <button onclick="exportAuditCSV()" style="background-color: #10b981; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                    <span>📥</span> Exportar Excel (CSV)
+                </button>
+            </div>
+        </div>
+        
+        <div style="padding: 0; overflow-y: auto; flex: 1;">
+            <table class="table" id="auditTable" style="margin: 0; width: 100%; border-collapse: collapse;">
+                <thead style="position: sticky; top: 0; background: var(--bg-card); z-index: 1;">
+                    <tr>
+                        <th style="width: 140px;">Data/Hora</th>
+                        <th style="width: 120px;">Autor</th>
+                        <th style="width: 180px;">Ação</th>
+                        <th style="width: 300px;">Alvo</th>
+                        <th>Detalhes</th>
+                    </tr>
+                </thead>
+                <tbody id="auditBody">
+                    <tr><td colspan="5" style="text-align: center; padding: 40px; color: var(--text-muted);">Aguardando pesquisa...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        
+    </div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 20px;">
+  
+  {% if cfg and cfg.scheduled_time and cfg.scheduled_days %}
+  <div style="background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 15px; border-radius: 4px; display: flex; align-items: center; gap: 15px;">
+    <span style="font-size: 24px;">⏰</span>
+    <div>
+      <strong style="color: #b45309; font-size: 15px;">Reinicialização Programada Ativa</strong>
+      <div style="color: #d97706; font-size: 13px; margin-top: 4px;">O sistema está programado para reiniciar todos os serviços automaticamente às <b style="color: #b45309;">{{ cfg.scheduled_time }}</b> nos dias agendados. <i style="color: #b45309;">Mantenha o ecrã Weepulse aberto.</i></div>
+    </div>
+  </div>
+  {% endif %}
+
+  <section class="card">
+    <div class="cardHeader">
+      <h2 class="cardTitle">Servidores</h2>
+      <div class="small-muted">Registe o IP/Hostname da sua infraestrutura</div>
+    </div>
+
+    <form id="addServerForm" style="display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px;">
+      <div class="field" style="flex: 1; min-width: 200px;">
+        <label>Nome</label>
+        <div class="control"><input id="srvName" name="name" placeholder="SRV-ERP01" required></div>
+      </div>
+      <div class="field" style="flex: 1; min-width: 200px;">
+        <label>IP/Hostname</label>
+        <div class="control"><input id="srvAddr" name="address" placeholder="192.168.0.10" required></div>
+      </div>
+      <div class="field" style="flex: 1; min-width: 150px;">
+        <label>Tipo</label>
+        <div class="control">
+          <select id="srvRole" name="role">
+            <option value="ERP">ERP</option>
+            <option value="DB">DB</option>
+            <option value="OTHER">OUTRO</option>
+          </select>
+        </div>
+      </div>
+
+      <button class="btn" id="btnAdd" type="submit" style="width: auto; padding: 10px 20px;">Adicionar servidor</button>
+    </form>
+    
+    <div class="small-muted" id="addMsg" style="margin-bottom: 10px;"></div>
+
+    <table class="table" id="tblServers" style="width: 100%;">
+      <thead>
+        <tr><th>Nome</th><th>Endereço</th><th style="text-align: right;">Ações</th></tr>
+      </thead>
+      <tbody>
+        {% for s in servers %}
+          <tr data-server-id="{{s.id}}">
+            <td><b style="color: var(--text-main);">{{ s.name }}</b><div class="small-muted" style="font-size: 11px;">{{ s.role }}</div></td>
+            <td style="color: var(--text-main);">{{ s.address }}</td>
+            <td style="text-align:right;">
+              <button style="background-color: transparent !important; color: #ef4444 !important; border: 1px solid #ef4444; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-weight: 600; width: auto !important; transition: 0.2s;" type="button" onmouseover="this.style.backgroundColor='#ef4444'; this.style.color='#fff';" onmouseout="this.style.backgroundColor='transparent'; this.style.color='#ef4444';" onclick="deleteServer({{s.id}})">Remover</button>
+            </td>
+          </tr>
+        {% endfor %}
+        {% if not servers %}
+          <tr id="noServersRow"><td colspan="3" class="small-muted" style="text-align: center;">Nenhum servidor registado.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <div class="cardHeader" style="margin-bottom: 15px;">
+      <h2 class="cardTitle">Serviços Protheus Ativos</h2>
+      <div class="small-muted">O Auto-Healing reinicia os serviços em baixo automaticamente e extrai o log para o seu e-mail.</div>
+    </div>
+
+    <div style="background-color: var(--bg-body); padding: 12px 15px; border-radius: 8px; border: 1px solid var(--border-color); width: 100%; margin-bottom: 15px; box-sizing: border-box;">
+        
+        <div style="display:flex; justify-content: space-between; gap:10px; align-items:center; flex-wrap: wrap;">
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
+              <button class="btn secondary small" type="button" style="width: auto !important; background-color: #10b981; color: white; border: none; font-weight: bold;" onclick="globalActionSystem('start')">▶️ Iniciar Todo o Sistema</button>
+              <button class="btn secondary small" type="button" style="width: auto !important; background-color: #f59e0b; color: white; border: none; font-weight: bold;" onclick="globalActionSystem('restart')">⚠️ Reiniciar Todo o Sistema</button>
+              <button class="btn secondary small" type="button" style="width: auto !important; background-color: #ef4444; color: white; border: none; font-weight: bold;" onclick="globalActionSystem('stop')">⏹️ Parar Todo o Sistema</button>
+              
+              <button class="btn secondary small" type="button" style="width: auto !important;" onclick="scanNow()">🔄 Forçar Scan</button>
+              
+              <div style="display: flex; gap: 5px; align-items: center; margin-left: 10px;">
+                  <span class="small-muted">Auto-Scan:</span>
+                  <select id="refreshSelect" style="padding: 4px 8px !important; margin: 0; min-width: 70px;">
+                    <option value="0">Off</option>
+                    <option value="5">5s</option>
+                    <option value="10" selected>10s</option>
+                    <option value="30">30s</option>
+                    <option value="60">60s</option>
+                  </select>
+              </div>
+              
+              <button id="btnSiren" class="btn secondary small" type="button" style="width: auto !important; margin-left: 15px; font-weight: bold; border: 2px solid var(--border-color);" onclick="toggleSiren()">🔇 Sirene: OFF</button>
+              <button class="btn secondary small" type="button" style="width: auto !important; font-weight: bold; background-color: var(--bg-card); color: var(--text-main); border: 2px solid var(--border-color);" onclick="openAuditModal()">📜 Auditoria</button>
+          </div>
+
+          <div style="text-align: right; border-left: 1px solid var(--border-color); padding-left: 15px;">
+            <span class="small-muted" id="scanStatus" style="white-space: nowrap; font-size: 11px;">A aguardar...</span>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border-color);">
+            <span class="small-muted" style="font-weight: bold; font-size: 12px; margin-right: 5px;">Ações em Massa:</span>
+            <button id="btnToggleAllMonitor" class="btn secondary small" type="button" onclick="toggleAllMonitor()" style="width: auto !important; border: 2px solid #6366f1; color: #6366f1; font-weight: bold; background: transparent; transition: 0.3s;">✔️ Ativar Healing (Todos)</button>
+            <button id="btnToggleAllIgnore" class="btn secondary small" type="button" onclick="toggleAllIgnore()" style="width: auto !important; border: 2px solid #f59e0b; color: #f59e0b; font-weight: bold; background: transparent; transition: 0.3s;">🔒 Travar Todos</button>
+        </div>
+
+    </div>
+
+    <div style="overflow:auto;">
+      <table class="table" id="tblServices" style="width: 100%;">
+        <thead>
+          <tr>
+            <th>Serviço Localizado</th>
+            <th>Estado</th>
+            <th>Uptime</th>
+            <th>CPU%</th>
+            <th>Memória</th>
+            <th>Threads</th> <th style="text-align: center;">Ações Manuais</th>
+            <th style="text-align: center;">Regras e Automação</th>
+          </tr>
+        </thead>
+        <tbody id="servicesBody">
+          </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let scanTimer = null;
+let scanning = false;
+
+let audioCtx = null;
+let alarmInterval = null;
+let isAlarmActive = false;
+let sirenMuted = true; 
+
+// Variáveis Globais de Estado para os botões "Ativar Todos"
+window.currentServicesData = [];
+window.isAllHealingOn = false;
+window.isAllIgnored = false;
+
+const scheduledTime = "{{ cfg.scheduled_time if cfg else '' }}";
+const scheduledDays = "{{ cfg.scheduled_days if cfg else '' }}".split(",");
+
+function setScanStatus(text){ document.getElementById("scanStatus").textContent = text || ""; }
+function escapeHtml(s){ return (s || "").toString().replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"); }
+function showBusy(title, msg){ document.getElementById("busyTitle").textContent = title || "A processar..."; document.getElementById("busyMsg").textContent = msg || "Aguarde por favor"; document.getElementById("busyOverlay").style.display = "flex"; }
+function hideBusy(){ document.getElementById("busyOverlay").style.display = "none"; }
+
+function openAuditModal() { document.getElementById('auditModal').style.display = 'flex'; loadAuditData(); }
+function closeAuditModal() { document.getElementById('auditModal').style.display = 'none'; }
+
+async function loadAuditData() {
+    const tbody = document.getElementById('auditBody');
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 40px; color: var(--text-muted);"><div class="spinner" style="margin: 0 auto 10px;"></div>A pesquisar no cofre de auditoria...</td></tr>';
+    
+    const limit = document.getElementById('auditLimit').value || 100;
+    const author = document.getElementById('auditAuthor').value.trim();
+    const action = document.getElementById('auditAction').value;
+    const target = document.getElementById('auditTarget').value.trim();
+    const details = document.getElementById('auditDetails').value.trim();
+    
+    const params = new URLSearchParams({ limit, author, action, target, details });
+    
+    try {
+        const r = await fetch(`{{ url_for('services.get_audit_logs') }}?${params.toString()}`);
+        if (r.redirected && r.url.includes('login')) { window.location.href = r.url; return; }
+        
+        const data = await r.json();
+        let html = '';
+        
+        if(data.logs && data.logs.length > 0) {
+            data.logs.forEach(l => {
+                let badgeColor = "#475569"; 
+                if (l.action.includes("START")) badgeColor = "#10b981"; 
+                if (l.action.includes("STOP")) badgeColor = "#ef4444"; 
+                if (l.action.includes("HEALING")) badgeColor = "#8b5cf6"; 
+                if (l.action.includes("FAIL")) badgeColor = "#b91c1c"; 
+                if (l.action.includes("CONFIG")) badgeColor = "#f59e0b"; 
+                
+                html += `<tr>
+                    <td style="color: var(--text-muted); font-size: 12px; white-space: nowrap;">${l.timestamp}</td>
+                    <td><b style="color: #3b82f6;">${escapeHtml(l.author)}</b></td>
+                    <td><span class="status-badge" style="background: ${badgeColor}; padding: 3px 6px; font-size: 10px;">${escapeHtml(l.action)}</span></td>
+                    <td style="color: var(--text-main); font-weight: 500; font-size: 12px;">${escapeHtml(l.target)}</td>
+                    <td style="color: var(--text-muted); font-size: 12px;">${escapeHtml(l.details)}</td>
+                </tr>`;
+            });
+        } else { html = '<tr><td colspan="5" style="text-align: center; padding: 40px; color: var(--text-muted);">Nenhum registo encontrado.</td></tr>'; }
+        tbody.innerHTML = html;
+    } catch(e) { tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 40px; color: #ef4444;">Erro ao carregar auditoria.</td></tr>'; }
+}
+
+function exportAuditCSV() {
+    let csv = "Data/Hora,Autor,Acao,Alvo,Detalhes\n";
+    const trs = document.getElementById("auditBody").getElementsByTagName("tr");
+    if (trs.length === 1 && trs[0].getElementsByTagName("td").length === 1) return;
+    for (let i = 0; i < trs.length; i++) {
+        let row = [];
+        const tds = trs[i].getElementsByTagName("td");
+        for (let j = 0; j < tds.length; j++) { let text = tds[j].innerText.replace(/"/g, '""'); row.push('"' + text + '"'); }
+        csv += row.join(",") + "\n";
+    }
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csv], { type: 'text/csv;charset=utf-8;' }); 
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a"); link.setAttribute("href", url); link.setAttribute("download", `Auditoria_Weepulse_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+}
+
+document.querySelectorAll('.audit-input').forEach(input => { input.addEventListener('keypress', function(e) { if (e.key === 'Enter') loadAuditData(); }); });
+
+function toggleSiren() {
+    sirenMuted = !sirenMuted;
+    const btn = document.getElementById("btnSiren");
+    if (sirenMuted) {
+        btn.innerHTML = "🔇 Sirene: OFF"; btn.style.backgroundColor = "transparent"; btn.style.color = "var(--text-muted)"; btn.style.borderColor = "var(--border-color)"; stopAlarm();
+    } else {
+        btn.innerHTML = "🚨 Sirene: ON"; btn.style.backgroundColor = "#ef4444"; btn.style.color = "white"; btn.style.borderColor = "#dc2626";
+        if (!audioCtx) { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+    }
+}
+
+function playBeep() {
+    if (!audioCtx || sirenMuted) return;
+    const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.type = "square";
+    osc.frequency.setValueAtTime(800, audioCtx.currentTime); osc.frequency.setValueAtTime(600, audioCtx.currentTime + 0.3); 
+    gain.gain.setValueAtTime(0.15, audioCtx.currentTime); 
+    osc.start(); osc.stop(audioCtx.currentTime + 0.6); 
+}
+
+function checkAndTriggerSiren(hasCriticalError) {
+    if (hasCriticalError) {
+        if (!isAlarmActive && !sirenMuted) {
+            isAlarmActive = true; document.body.classList.add("siren-active"); document.getElementById("sirenBanner").style.display = "block";
+            playBeep(); alarmInterval = setInterval(playBeep, 1500);
+        }
+    } else { stopAlarm(); }
+}
+
+function stopAlarm() {
+    isAlarmActive = false; document.body.classList.remove("siren-active"); document.getElementById("sirenBanner").style.display = "none";
+    if (alarmInterval) { clearInterval(alarmInterval); alarmInterval = null; }
+}
+
+function renderServices(items){
+  const body = document.getElementById("servicesBody");
+  body.innerHTML = "";
+  
+  // Guardar estado global para as Ações em Massa
+  window.currentServicesData = items || [];
+
+  if (!items || items.length === 0){
+    body.innerHTML = `<tr id="noServicesRow"><td colspan="8" class="small-muted" style="text-align:center; padding: 20px;">Nenhum serviço AppServer, DBAccess ou License localizado na rede.</td></tr>`;
+    checkAndTriggerSiren(false);
+    return;
+  }
+  
+  // Verificar e pintar botões de Ações em Massa
+  window.isAllHealingOn = items.every(it => it.is_monitored);
+  window.isAllIgnored = items.every(it => it.is_ignored);
+
+  const btnHealing = document.getElementById("btnToggleAllMonitor");
+  const btnIgnore = document.getElementById("btnToggleAllIgnore");
+
+  if (window.isAllHealingOn) {
+      btnHealing.innerHTML = "❌ Desativar Healing (Todos)";
+      btnHealing.style.backgroundColor = "#6366f1";
+      btnHealing.style.color = "white";
+  } else {
+      btnHealing.innerHTML = "✔️ Ativar Healing (Todos)";
+      btnHealing.style.backgroundColor = "transparent";
+      btnHealing.style.color = "#6366f1";
+  }
+
+  if (window.isAllIgnored) {
+      btnIgnore.innerHTML = "🔓 Destravar Todos";
+      btnIgnore.style.backgroundColor = "#f59e0b";
+      btnIgnore.style.color = "white";
+  } else {
+      btnIgnore.innerHTML = "🔒 Travar Todos";
+      btnIgnore.style.backgroundColor = "transparent";
+      btnIgnore.style.color = "#f59e0b";
+  }
+
+  const grouped = {};
+  for (const it of items) {
+      const srvKey = (it.server_name || "Servidor Desconhecido") + "|" + (it.server_address || "");
+      if (!grouped[srvKey]) grouped[srvKey] = [];
+      grouped[srvKey].push(it);
+  }
+
+  let hasCriticalError = false;
+
+  for (const [srvKey, svcs] of Object.entries(grouped)) {
+      const [sName, sAddr] = srvKey.split("|");
+      const headerRow = document.createElement("tr"); headerRow.className = "server-header";
+      headerRow.innerHTML = `<td colspan="8"><span style="font-size: 16px; margin-right: 5px;">💻</span> <b>${escapeHtml(sName)}</b> <span class="ip">${escapeHtml(sAddr)}</span></td>`;
+      body.appendChild(headerRow);
+
+      for (const it of svcs) {
+        const statusUpper = (it.status || "").toUpperCase();
+        let badgeClass = "status-other"; 
+        if (statusUpper === "RUNNING") badgeClass = "status-running"; 
+        else if (statusUpper.includes("STOPPED") || statusUpper.includes("ERROR")) { badgeClass = "status-stopped"; hasCriticalError = true; }
+        else if (statusUpper.includes("AUTO-HEALING")) badgeClass = "status-healing"; 
+        
+        const statusBadge = `<span class="status-badge ${badgeClass}">${escapeHtml(statusUpper)}</span>`;
+        
+        const monitorBtnClass = it.is_monitored ? "btn-monitor on" : "btn-monitor off";
+        const monitorBtnText = it.is_monitored ? "✔️ Healing: ON" : "Healing: OFF";
+
+        const ignoreBtnClass = it.is_ignored ? "btn-ignore on" : "btn-ignore off";
+        const ignoreBtnText = it.is_ignored ? "🔒 Travado" : "🔓 Destravado";
+
+        const trClass = it.is_ignored ? "row-ignored" : "";
+        const ignoredBadgeUI = it.is_ignored ? `<span class="ignored-badge" style="background-color: #f59e0b; color: white; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; margin-left: 5px; vertical-align: middle;" title="Este serviço está TRAVADO e ignorará ações do sistema.">🔒 TRAVADO</span>` : "";
+
+        const portInfo = it.port ? `<div style="font-size: 10.5px; margin-top: 6px; display:flex; align-items:center; gap:4px;"><span title="Porta TCP do Serviço">🔌</span> <b>Porta TCP: ${escapeHtml(it.port)}</b> <span style="margin-left:2px; font-weight:600; color: ${it.port_status === 'Respondendo' ? '#10b981' : '#ef4444'}">(${escapeHtml(it.port_status)})</span></div>` : '';
+        const rpoInfo = it.rpo_name ? `<div style="font-size: 10.5px; margin-top: 3px; display:flex; align-items:center; gap:4px; color: var(--text-muted);"><span title="Repositório Padrão (SourcePath)">📦</span> Padrão: <b>${escapeHtml(it.rpo_name)}</b> <span>(${escapeHtml(it.rpo_date)})</span></div>` : '';
+        const rpoCustomInfo = it.rpo_custom_name ? `<div style="font-size: 10.5px; margin-top: 3px; display:flex; align-items:center; gap:4px; color: var(--text-muted);"><span title="Repositório Customizado (RpoCustom)">📦</span> Custom: <b>${escapeHtml(it.rpo_custom_name)}</b> <span>(${escapeHtml(it.rpo_custom_date)})</span></div>` : '';
+
+        const threadColor = (it.threads > 150) ? '#ef4444' : 'var(--text-main)';
+
+        const tr = document.createElement("tr");
+        if (trClass) tr.className = trClass;
+        
+        tr.innerHTML = `
+          <td>
+            <b title="Ficheiro INI: ${escapeHtml(it.debug_ini || 'Nenhum')}" style="color: var(--text-main); cursor: help;">${escapeHtml(it.service_name)}</b> ${ignoredBadgeUI}
+            <div class="small-muted" style="font-size: 10px; margin-bottom: 2px;">${escapeHtml(it.type || "")}</div>
+            ${portInfo}
+            ${rpoInfo}
+            ${rpoCustomInfo}
+          </td>
+          <td>${statusBadge}</td>
+          <td style="color: var(--text-main);">${escapeHtml(it.uptime || "-")}</td>
+          <td style="color: var(--text-main);"><b>${Number(it.cpu_percent ?? 0).toFixed(1)}%</b></td>
+          <td style="color: var(--text-main);"><b>${Number(it.mem_mb ?? 0).toFixed(1)}</b> <span class="small-muted" style="font-size:10px;">MB</span></td>
+          
+		  <td>
+			 <b style="color: ${threadColor}; font-size: 14px;">${it.threads || 0}</b>
+		  </td>
+          
+          <td style="text-align: center;">
+            <div style="display: inline-flex; flex-direction: row; gap: 8px; flex-wrap: nowrap;">
+              <button class="btn-action btn-start" type="button" onclick="svcAction(this,'${escapeHtml(it.server_address)}','${escapeHtml(it.service_key)}','${escapeHtml(it.service_name)}','start')">Iniciar</button>
+              <button class="btn-action btn-restart" type="button" onclick="svcAction(this,'${escapeHtml(it.server_address)}','${escapeHtml(it.service_key)}','${escapeHtml(it.service_name)}','restart')">Reiniciar</button>
+              <button class="btn-action btn-stop" type="button" onclick="svcAction(this,'${escapeHtml(it.server_address)}','${escapeHtml(it.service_key)}','${escapeHtml(it.service_name)}','stop')">Parar</button>
+            </div>
+          </td>
+
+          <td style="text-align: center;">
+            <div style="display: flex; flex-direction: column; gap: 6px; align-items: center;">
+                <button class="${monitorBtnClass}" type="button" onclick="toggleMonitor(this, '${escapeHtml(it.server_address)}', '${escapeHtml(it.service_key)}')">${monitorBtnText}</button>
+                <button class="${ignoreBtnClass}" type="button" onclick="toggleIgnore(this, '${escapeHtml(it.server_address)}', '${escapeHtml(it.service_key)}')">${ignoreBtnText}</button>
+            </div>
+          </td>
+        `;
+        body.appendChild(tr);
+      }
+  }
+  checkAndTriggerSiren(hasCriticalError);
+}
+
+// -------------------------------------------------------------
+// UI OTIMISTA: Atualiza instantaneamente a tela antes do servidor
+// -------------------------------------------------------------
+async function toggleMonitor(btnEl, server_address, service_key) {
+    const isCurrentlyOn = btnEl.classList.contains('on');
+    const nextState = !isCurrentlyOn;
+
+    if (nextState) { btnEl.className = "btn-monitor on"; btnEl.innerHTML = "✔️ Healing: ON"; } 
+    else { btnEl.className = "btn-monitor off"; btnEl.innerHTML = "Healing: OFF"; }
+    btnEl.disabled = true;
+
+    try {
+        const res = await fetch("{{ url_for('services.toggle_monitor') }}", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ server_address, service_key }) });
+        if (res.redirected && res.url.includes('login')) { window.location.href = res.url; return; }
+        const data = await res.json();
+        if (!data || !data.ok) throw new Error("Falha no Backend");
+    } catch (e) {
+        if (isCurrentlyOn) { btnEl.className = "btn-monitor on"; btnEl.innerHTML = "✔️ Healing: ON"; } 
+        else { btnEl.className = "btn-monitor off"; btnEl.innerHTML = "Healing: OFF"; }
+        alert("Erro de comunicação ao alterar Auto-Healing. O estado foi revertido.");
+    } finally { btnEl.disabled = false; scanNow(); }
+}
+
+async function toggleIgnore(btnEl, server_address, service_key) {
+    const isCurrentlyOn = btnEl.classList.contains('on');
+    const nextState = !isCurrentlyOn;
+    const tr = btnEl.closest("tr");
+    const firstTd = tr.querySelector("td");
+
+    if (nextState) {
+        btnEl.className = "btn-ignore on"; btnEl.innerHTML = "🔒 Travado"; tr.classList.add("row-ignored");
+        if (!firstTd.querySelector('.ignored-badge')) { firstTd.querySelector("b").insertAdjacentHTML('afterend', ` <span class="ignored-badge" style="background-color: #f59e0b; color: white; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; vertical-align: middle;">🔒 TRAVADO</span>`); }
+    } else {
+        btnEl.className = "btn-ignore off"; btnEl.innerHTML = "🔓 Destravado"; tr.classList.remove("row-ignored");
+        const badge = firstTd.querySelector('.ignored-badge'); if (badge) badge.remove();
+    }
+    btnEl.disabled = true;
+
+    try {
+        const res = await fetch("{{ url_for('services.toggle_ignore') }}", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ server_address, service_key }) });
+        if (res.redirected && res.url.includes('login')) { window.location.href = res.url; return; }
+        const data = await res.json();
+        if (!data || !data.ok) throw new Error("Falha no Backend");
+    } catch (e) {
+        if (isCurrentlyOn) { btnEl.className = "btn-ignore on"; btnEl.innerHTML = "🔒 Travado"; tr.classList.add("row-ignored"); } 
+        else { btnEl.className = "btn-ignore off"; btnEl.innerHTML = "🔓 Destravado"; tr.classList.remove("row-ignored"); const badge = firstTd.querySelector('.ignored-badge'); if (badge) badge.remove(); }
+        alert("Erro de comunicação com o servidor. O estado foi revertido.");
+    } finally { btnEl.disabled = false; scanNow(); }
+}
+
+// -------------------------------------------------------------
+// AÇÕES EM MASSA (TOGGLE ALL)
+// -------------------------------------------------------------
+async function toggleAllMonitor() {
+    if (!window.currentServicesData || window.currentServicesData.length === 0) return;
+    const nextState = !window.isAllHealingOn;
+    
+    showBusy("A aplicar regra em massa...", "A atualizar base de dados para todos os serviços...");
+    if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+    scanning = true;
+
+    try {
+        const payload = window.currentServicesData.map(s => ({ server_address: s.server_address, service_key: s.service_key }));
+        const res = await fetch("{{ url_for('services.toggle_all_monitor') }}", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ state: nextState, services: payload })
+        });
+        if (res.redirected && res.url.includes('login')) { window.location.href = res.url; return; }
+        const data = await res.json();
+        if (!data.ok) throw new Error();
+    } catch (e) {
+        alert("Erro ao alterar o Auto-Healing em massa.");
+    } finally {
+        scanning = false; await scanNow(); hideBusy(); setupAutoScan();
+    }
+}
+
+async function toggleAllIgnore() {
+    if (!window.currentServicesData || window.currentServicesData.length === 0) return;
+    const nextState = !window.isAllIgnored;
+    
+    showBusy("A aplicar regra de proteção...", "A travar/destravar todos os serviços no banco de dados...");
+    if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+    scanning = true;
+
+    try {
+        const payload = window.currentServicesData.map(s => ({ server_address: s.server_address, service_key: s.service_key }));
+        const res = await fetch("{{ url_for('services.toggle_all_ignore') }}", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ state: nextState, services: payload })
+        });
+        if (res.redirected && res.url.includes('login')) { window.location.href = res.url; return; }
+        const data = await res.json();
+        if (!data.ok) throw new Error();
+    } catch (e) {
+        alert("Erro ao aplicar regra de proteção em massa.");
+    } finally {
+        scanning = false; await scanNow(); hideBusy(); setupAutoScan();
+    }
+}
+
+function checkScheduledRestart() {
+    if (!scheduledTime || scheduledDays.length === 0 || scheduledDays[0] === "") return;
+    const now = new Date();
+    const currentDay = now.getDay().toString();
+    const currentHourMinute = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
+
+    if (scheduledDays.includes(currentDay) && currentHourMinute === scheduledTime) {
+        const todayStr = now.toDateString();
+        const lastRun = localStorage.getItem("weepulseLastScheduledRun");
+        if (lastRun !== todayStr) {
+            localStorage.setItem("weepulseLastScheduledRun", todayStr);
+            runScheduledRestart();
+        }
+    }
+}
+
+async function runScheduledRestart() {
+    if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+    scanning = true; 
+    showBusy("⏳ A executar Reinicialização Programada...", `Chegou a hora (${scheduledTime}). A parar e a religar a infraestrutura (ignorando serviços travados)...`);
+    
+    try {
+        const res = await fetch("{{ url_for('services.global_action_route') }}", {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ command: 'restart', is_scheduled: true })
+        });
+        if (res.redirected && res.url.includes('login')) { window.location.href = res.url; return; }
+    } catch (err) { console.error("Falha ao executar rotina programada.", err); } 
+    finally { scanning = false; await scanNow(); hideBusy(); setupAutoScan(); }
+}
+
+async function scanNow(){
+  if (scanning) return;
+  scanning = true; setScanStatus("A ler servidores..."); checkScheduledRestart();
+  
+  try{
+    const r = await fetch("{{ url_for('services.scan_json') }}", { method: "GET" });
+    if (r.redirected && r.url.includes('login')) { window.location.href = r.url; return; }
+    const data = await r.json();
+    if (data && data.ok){ renderServices(data.services || []); setScanStatus(`Atualizado: ${new Date().toLocaleTimeString()}`); } 
+    else { setScanStatus("Falha no scan."); }
+  } catch(e){ setScanStatus("Erro de ligação."); } 
+  finally { scanning = false; }
+}
+
+function setupAutoScan(){
+  const sel = document.getElementById("refreshSelect"); const seconds = parseInt(sel.value, 10);
+  if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+  if (!isNaN(seconds) && seconds > 0){
+    scanTimer = setInterval(() => {
+      const activeId = document.activeElement?.id || "";
+      const isTyping = ["srvName", "srvAddr"].includes(activeId); 
+      const isTypingAudit = activeId && activeId.startsWith("audit");
+      if (!isTyping && !isTypingAudit) scanNow();
+    }, seconds * 1000);
+  }
+}
+
+async function svcAction(btnEl, server_address, service_key, service_name, action){
+  const actionLabel = action === "start" ? "A iniciar" : action === "stop" ? "A parar" : "A reiniciar";
+  showBusy(`${actionLabel} serviço...`, `A forçar o comando no Windows pela rede. Aguarde...`);
+  const row = btnEl?.closest("tr"); const buttons = row ? row.querySelectorAll("button") : [];
+  buttons.forEach(b => b.disabled = true);
+
+  try{
+    const res = await fetch("{{ url_for('services.do_action') }}", {
+      method:"POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({server_address: server_address, service_key, service_name, action})
+    });
+    if (res.redirected && res.url.includes('login')) { window.location.href = res.url; return; }
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok){ setScanStatus(data.message || "Falha na ação."); } 
+    else { setScanStatus(`Comando aceite. A recarregar...`); }
+  } finally { buttons.forEach(b => b.disabled = false); await scanNow(); hideBusy(); }
+}
+
+// -------------------------------------------------------------
+// FUNÇÃO UNIFICADA DE AÇÕES GLOBAIS - SEM ALERTAS BLOQUEADORES
+// -------------------------------------------------------------
+async function globalActionSystem(command) {
+    let title = "";
+    let confirmMsg = "";
+    
+    if (command === 'start') {
+        confirmMsg = "Deseja LIGAR todos os serviços que estão desligados?\n\n*Nota: Os serviços 'Travados' serão ignorados e os que já estão ligados também.*";
+        title = "A ligar Sistema Completo...";
+    } else if (command === 'stop') {
+        confirmMsg = "Deseja PARAR todos os serviços que estão ligados?\n\n*Nota: Os serviços 'Travados' serão ignorados e os que já estão desligados também.*";
+        title = "A parar Sistema Completo...";
+    } else {
+        confirmMsg = "⚠️ ATENÇÃO: Deseja realmente REINICIAR a infraestrutura?\n\nIsto irá:\n1. Parar serviços ligados.\n2. Ligar tudo na ordem correta.\n\n*Nota: Os serviços 'Travados' serão rigorosamente ignorados.*";
+        title = "A reiniciar Sistema Completo...";
+    }
+
+    if (!confirm(confirmMsg)) return;
+    
+    if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+    scanning = true; 
+    showBusy(title, "A executar comandos na rede. Aguarde...");
+    
+    try {
+        const res = await fetch("{{ url_for('services.global_action_route') }}", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ command: command, is_scheduled: false })
+        });
+        if (res.redirected && res.url.includes('login')) { window.location.href = res.url; return; }
+
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) {
+            setScanStatus("✔️ Ação global concluída!");
+        } else {
+            alert("Ocorreu um problema durante o procedimento. Motivo: " + (data.message || "Erro desconhecido."));
+        }
+    } catch (err) {
+        alert("Falha de rede ao tentar iniciar a rotina global.");
+    } finally {
+        scanning = false; await scanNow(); hideBusy(); setupAutoScan(); 
+    }
+}
+
+async function deleteServer(serverId) {
+  if (!confirm("Tem a certeza que deseja remover este servidor?")) return;
+  
+  showBusy("A remover servidor...", "A atualizar base de dados.");
+  try {
+    const url = "{{ url_for('services.delete_server', server_id=0) }}".replace('0', serverId);
+    const r = await fetch(url, { method: "POST" });
+    if (r.redirected && r.url.includes('login')) { window.location.href = r.url; return; }
+    
+    if (r.ok) {
+      const row = document.querySelector(`tr[data-server-id="${serverId}"]`);
+      if (row) row.remove();
+      const tbody = document.querySelector("#tblServers tbody");
+      if (tbody && tbody.children.length === 0) { tbody.innerHTML = '<tr id="noServersRow"><td colspan="8" class="small-muted" style="text-align: center;">Nenhum servidor registado.</td></tr>'; }
+      await scanNow();
+    } else { alert("Falha ao remover o servidor."); }
+  } catch(e) { alert("Erro de ligação ao tentar remover."); } 
+  finally { hideBusy(); }
+}
+
+document.getElementById("addServerForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("btnAdd"); const msg = document.getElementById("addMsg");
+  msg.textContent = ""; btn.disabled = true; btn.textContent = "A guardar...";
+
+  const payload = new URLSearchParams({
+    name: document.getElementById("srvName").value.trim(), 
+    address: document.getElementById("srvAddr").value.trim(), 
+    role: document.getElementById("srvRole").value
+  });
+
+  try{
+    const r = await fetch("{{ url_for('services.add_server') }}", { method: "POST", headers: {"Content-Type":"application/x-www-form-urlencoded"}, body: payload });
+    if (r.redirected && r.url.includes('login')) { window.location.href = r.url; return; }
+    
+    const data = await r.json();
+    if (!r.ok || !data.ok){ msg.textContent = "Erro ao guardar servidor."; return; }
+    
+    // --- NOVIDADE: INJETAR A LINHA NA TABELA SEM RECARREGAR A PÁGINA ---
+    const tbody = document.querySelector("#tblServers tbody");
+    const noServersRow = document.getElementById("noServersRow");
+    if (noServersRow) noServersRow.remove(); // Remove o aviso de "Nenhum servidor"
+
+    const s = data.server;
+    const tr = document.createElement("tr");
+    tr.setAttribute("data-server-id", s.id);
+    tr.innerHTML = `
+        <td><b style="color: var(--text-main);">${escapeHtml(s.name)}</b><div class="small-muted" style="font-size: 11px;">${escapeHtml(s.role)}</div></td>
+        <td style="color: var(--text-main);">${escapeHtml(s.address)}</td>
+        <td style="text-align:right;">
+          <button style="background-color: transparent !important; color: #ef4444 !important; border: 1px solid #ef4444; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-weight: 600; width: auto !important; transition: 0.2s;" type="button" onmouseover="this.style.backgroundColor='#ef4444'; this.style.color='#fff';" onmouseout="this.style.backgroundColor='transparent'; this.style.color='#ef4444';" onclick="deleteServer(${s.id})">Remover</button>
+        </td>
+    `;
+    tbody.appendChild(tr);
+    // -------------------------------------------------------------------
+
+    document.getElementById("srvName").value = ""; 
+    document.getElementById("srvAddr").value = ""; 
+    document.getElementById("srvRole").value = "ERP";
+    
+    await scanNow(); // Vai na rede procurar os serviços daquele novo IP
+    msg.textContent = "OK.";
+  } catch(err){ 
+    msg.textContent = "Erro de rede."; 
+  } finally { 
+    btn.disabled = false; 
+    btn.textContent = "Adicionar servidor"; 
+    setTimeout(() => { msg.textContent = ""; }, 2000); 
+  }
+});
+
+document.getElementById("refreshSelect").addEventListener("change", setupAutoScan);
+setupAutoScan();
+scanNow();
+</script>
+{% endblock %}

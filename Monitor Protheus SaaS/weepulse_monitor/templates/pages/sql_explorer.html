@@ -1,0 +1,329 @@
+{% extends "layout.html" %}
+{% block title %}SQL Explorer Pro | Weepulse{% endblock %}
+
+{% block content %}
+<style>
+    /* Estilização do Editor Estilo SSMS */
+    .editor-container {
+        position: relative;
+        width: 100%;
+        height: 400px;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background-color: #ffffff;
+        display: flex;
+        overflow: hidden;
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    }
+
+    [data-theme="dark"] .editor-container {
+        background-color: #1e1e1e;
+    }
+
+    /* Contador de Linhas */
+    .line-numbers {
+        width: 45px;
+        padding: 10px 5px !important;
+        background-color: #f1f5f9;
+        color: #64748b;
+        text-align: right;
+        user-select: none;
+        border-right: 1px solid var(--border-color);
+        font-size: 14px;
+        line-height: 20px;
+        overflow: hidden;
+    }
+
+    [data-theme="dark"] .line-numbers {
+        background-color: #0f172a;
+        color: #64748b;
+    }
+
+    /* Área de Texto e Highlighting */
+    .editor-wrapper {
+        position: relative;
+        flex: 1;
+        height: 100%;
+        background: transparent;
+    }
+
+    /* Forçamos o alinhamento com o seu layout.html */
+    .sql-editor, .sql-backdrop {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        padding: 10px 12px !important; /* Sincronizado com o seu layout global */
+        border: none !important;
+        margin: 0;
+        font-family: inherit;
+        font-size: 14px;
+        line-height: 20px;
+        white-space: pre;
+        overflow: auto;
+        tab-size: 4;
+        box-sizing: border-box;
+    }
+
+    .sql-editor {
+        background-color: transparent !important;
+        color: transparent !important;
+        caret-color: #0f172a !important; /* Cursor visível no tema claro */
+        z-index: 2;
+        resize: none;
+        outline: none !important;
+    }
+
+    [data-theme="dark"] .sql-editor {
+        caret-color: #f8fafc !important; /* Cursor visível no tema escuro */
+    }
+
+    .sql-backdrop {
+        z-index: 1;
+        pointer-events: none;
+        color: #0f172a;
+    }
+
+    [data-theme="dark"] .sql-backdrop {
+        color: #d4d4d4;
+    }
+
+    /* Cores de Sintaxe SQL (Padrão SSMS) */
+    .keyword { color: #0000ff; font-weight: bold; }
+    .string { color: #a31515; }
+    .number { color: #098658; }
+    .comment { color: #008000; }
+
+    [data-theme="dark"] .keyword { color: #569cd6; }
+    [data-theme="dark"] .string { color: #ce9178; }
+    [data-theme="dark"] .number { color: #b5cea8; }
+    [data-theme="dark"] .comment { color: #6a9955; }
+
+    /* Ajuste da Tabela de Resultados */
+    .sticky-header th {
+        position: sticky;
+        top: 0;
+        background: var(--nav-hover);
+        z-index: 5;
+        box-shadow: 0 1px 0 var(--border-color);
+    }
+</style>
+
+<h1 class="h1">11) SQL Explorer Pro</h1>
+<p class="sub">Interface de consulta avançada. Use <b>Ctrl + Enter</b> para executar.</p>
+
+<div class="grid cols1">
+    <section class="card">
+        <div class="cardHeader" style="display: flex; justify-content: space-between;">
+            <h2 class="cardTitle">Query Editor</h2>
+            <div id="cursorPos" class="small-muted" style="font-size: 11px;">Linha: 1, Col: 1</div>
+        </div>
+
+        <div class="editor-container">
+            <div class="line-numbers" id="lineNumbers">1</div>
+            <div class="editor-wrapper">
+                <div class="sql-backdrop" id="backdrop"><code id="highlighting"></code></div>
+                
+                <textarea id="sql_code" class="sql-editor" spellcheck="false" 
+                    placeholder="Digite sua query SELECT aqui..."
+                    oninput="updateEditor()" onscroll="syncScroll()"></textarea>
+            </div>
+        </div>
+        
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+            <button class="btn" type="button" id="btnRun" onclick="runQuery(false)" style="flex: 2;">▶ EXECUTAR (Ctrl+Enter)</button>
+            <button class="btn" type="button" onclick="runQuery(true)" style="background-color: #10b981; flex: 1;">⬇️ BAIXAR CSV</button>
+        </div>
+        <div id="queryMsg" style="font-size: 13px; font-weight: bold; text-align: center; margin-top: 10px;"></div>
+    </section>
+
+    <section id="resultCard" class="card" style="display: none;">
+        <div class="cardHeader" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h2 class="cardTitle">Resultados</h2>
+                <div class="small-muted"><span id="rowCount">0</span> registros encontrados.</div>
+            </div>
+            <button class="btn-small" onclick="runQuery(true)">Exportar CSV</button>
+        </div>
+        
+        <div style="max-height: 500px; overflow-y: auto; margin-top: 15px; border: 1px solid var(--border-color); border-radius: 6px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead id="tableHead" class="sticky-header"></thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const textarea = document.getElementById('sql_code');
+const backdrop = document.getElementById('backdrop');
+const highlighting = document.getElementById('highlighting');
+const lineNumbers = document.getElementById('lineNumbers');
+
+function highlightSQL(text) {
+    // 1. Escapar HTML para não quebrar a página
+    text = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    // 2. Palavras reservadas do SQL
+    const keywords = ["SELECT", "FROM", "WHERE", "JOIN", "ON", "GROUP BY", "ORDER BY", "HAVING", "LIMIT", "TOP", "AS", "IN", "AND", "OR", "NOT", "NULL", "IS", "INNER", "LEFT", "RIGHT", "FULL", "CROSS", "DISTINCT", "BETWEEN", "LIKE", "EXISTS"];
+    
+    // Regra das palavras reservadas (azul)
+    const keywordRegex = new RegExp(`\\b(${keywords.join('|')})\\b`, "gi");
+    text = text.replace(keywordRegex, match => `<span class="keyword">${match.toUpperCase()}</span>`);
+
+    // Regra das Strings entre aspas simples (vermelho)
+    text = text.replace(/'(.*?)'/g, `<span class="string">'$1'</span>`);
+
+    // Regra dos Números (verde oliva)
+    text = text.replace(/\b(\d+)\b/g, `<span class="number">$1</span>`);
+
+    // Regra de Comentários inline -- (verde)
+    text = text.replace(/--.*$/gm, `<span class="comment">$&</span>`);
+    
+    // Regra de Comentários em bloco /* */
+    text = text.replace(/\/\*[\s\S]*?\*\//g, `<span class="comment">$&</span>`);
+
+    return text;
+}
+
+function updateEditor() {
+    const content = textarea.value;
+    
+    // Atualiza a camada de cores atrás do texto
+    highlighting.innerHTML = highlightSQL(content) + (content.endsWith('\n') ? ' ' : '');
+    
+    // Conta e atualiza os números das linhas
+    const lines = content.split('\n').length;
+    let lineContent = '';
+    for (let i = 1; i <= lines; i++) {
+        lineContent += i + '<br>';
+    }
+    lineNumbers.innerHTML = lineContent;
+    
+    updateCursorPos();
+}
+
+function syncScroll() {
+    // Mantém as 3 camadas (linhas, fundo colorido e área de digitação) rolando juntas
+    backdrop.scrollTop = textarea.scrollTop;
+    backdrop.scrollLeft = textarea.scrollLeft;
+    lineNumbers.scrollTop = textarea.scrollTop;
+}
+
+function updateCursorPos() {
+    const textBefore = textarea.value.substring(0, textarea.selectionStart);
+    const lines = textBefore.split('\n');
+    document.getElementById('cursorPos').innerText = `Linha: ${lines.length}, Col: ${lines[lines.length - 1].length + 1}`;
+}
+
+// Atalhos de Teclado
+textarea.addEventListener('keydown', function(e) {
+    // Tecla TAB injeta 4 espaços em vez de sair da caixa
+    if (e.key === 'Tab') {
+        e.preventDefault();
+        const start = this.selectionStart;
+        const end = this.selectionEnd;
+        this.value = this.value.substring(0, start) + "    " + this.value.substring(end);
+        this.selectionStart = this.selectionEnd = start + 4;
+        updateEditor();
+    }
+    
+    // Ctrl + Enter executa a query
+    if (e.ctrlKey && e.key === 'Enter') {
+        e.preventDefault();
+        runQuery(false);
+    }
+});
+
+textarea.addEventListener('keyup', updateCursorPos);
+textarea.addEventListener('click', updateCursorPos);
+
+async function runQuery(forceCsv) {
+    const query = textarea.value.trim();
+    const btn = document.getElementById('btnRun');
+    const msg = document.getElementById('queryMsg');
+    const resultCard = document.getElementById('resultCard');
+
+    if (!query) {
+        msg.innerText = "❌ Digite uma query antes de executar.";
+        msg.style.color = "#ef4444";
+        return;
+    }
+
+    if (!query.toLowerCase().startsWith("select")) {
+        msg.innerText = "❌ BLOQUEADO: Apenas comandos SELECT são permitidos.";
+        msg.style.color = "#ef4444";
+        return;
+    }
+
+    btn.disabled = true;
+    msg.innerText = "Consultando banco de dados...";
+    msg.style.color = "var(--text-main)";
+
+    try {
+        const formData = new URLSearchParams();
+        formData.append('sql_code', query);
+        formData.append('force_csv', forceCsv);
+
+        const response = await fetch("{{ url_for('sql_explorer.sql_home') }}", {
+            method: "POST",
+            body: formData,
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        });
+
+        const contentType = response.headers.get("content-type");
+
+        if (contentType && contentType.includes("text/csv")) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = "query_result.csv";
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            msg.innerText = "✅ Arquivo CSV gerado com sucesso!";
+            msg.style.color = "#10b981";
+            
+            if(!forceCsv) resultCard.style.display = 'none'; 
+            
+        } else {
+            const data = await response.json();
+            if (data.ok) {
+                msg.innerText = "✅ Consulta finalizada!";
+                msg.style.color = "#10b981";
+                
+                document.getElementById('tableHead').innerHTML = "<tr>" + data.columns.map(c => `<th style="padding: 10px; border-right: 1px solid var(--border-color);">${c}</th>`).join('') + "</tr>";
+                document.getElementById('tableBody').innerHTML = data.data.map(row => 
+                    "<tr style='border-bottom: 1px solid var(--border-color);'>" + 
+                    row.map(cell => `<td style="padding: 8px 10px; border-right: 1px solid var(--border-color);">${cell}</td>`).join('') + 
+                    "</tr>"
+                ).join('');
+                
+                document.getElementById('rowCount').innerText = data.count;
+                resultCard.style.display = 'block';
+            } else {
+                msg.innerText = "❌ " + data.message;
+                msg.style.color = "#ef4444";
+                resultCard.style.display = 'none';
+            }
+        }
+    } catch (e) {
+        msg.innerText = "❌ Erro ao comunicar com o servidor.";
+        msg.style.color = "#ef4444";
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// Inicializa a caixa já gerando a linha 1
+updateEditor();
+</script>
+{% endblock %}

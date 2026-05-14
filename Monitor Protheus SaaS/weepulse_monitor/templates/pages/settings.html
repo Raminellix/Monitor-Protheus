@@ -1,0 +1,393 @@
+{% extends "layout.html" %}
+{% block title %}Configurações | Weepulse{% endblock %}
+
+{% block content %}
+<h1 class="h1">9) Configurações</h1>
+<p class="sub">SMTP, limites, SQL, WinRM, agendamentos e troca de senha.</p>
+
+<div class="grid cols2">
+  
+  <section class="card">
+    <div class="cardHeader">
+      <h2 class="cardTitle">SMTP</h2>
+      <div class="small-muted">Envio de alertas por E-mail</div>
+    </div>
+
+    <form method="post" class="grid" style="gap:12px;">
+      <input type="hidden" name="tab" value="smtp">
+      <div class="field">
+        <label>Host</label>
+        <div class="control"><input name="smtp_host" value="{{cfg.smtp_host}}"></div>
+      </div>
+      <div class="field">
+        <label>Porta</label>
+        <div class="control"><input name="smtp_port" value="{{cfg.smtp_port}}"></div>
+      </div>
+      <div class="field">
+        <label>Usuário</label>
+        <div class="control"><input name="smtp_user" value="{{cfg.smtp_user}}"></div>
+      </div>
+      <div class="field">
+        <label>Senha</label>
+        <div class="control"><input name="smtp_password" type="password" value="{{cfg.smtp_password}}"></div>
+      </div>
+      
+      <div class="field" style="display: flex; align-items: center; gap: 10px; margin-top: 5px; margin-bottom: 5px;">
+        <input type="checkbox" id="smtp_tls" name="smtp_tls" {% if cfg.smtp_tls %}checked{% endif %} style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;">
+        <label for="smtp_tls" style="margin: 0; cursor: pointer; font-weight: 600; color: #1e293b;">Ativar Conexão Segura (SSL / STARTTLS)</label>
+      </div>
+
+      <div class="field">
+        <label>E-mail destino</label>
+        <div class="control"><input name="alert_email_to" value="{{cfg.alert_email_to}}"></div>
+      </div>
+      
+      <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px;">
+        <button class="btn" type="submit" style="flex: 1;">Salvar SMTP</button>
+        <button class="btn" type="button" id="btnTestEmail" style="flex: 1;" onclick="testSmtp()">Testar Envio</button>
+      </div>
+      <div id="testMsg" style="font-size: 13px; font-weight: bold; margin-top: 8px; text-align: center;"></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="cardHeader">
+      <h2 class="cardTitle">Agendamentos Automáticos</h2>
+      <div class="small-muted">Reinício e Faxina do Protheus</div>
+    </div>
+    <form method="post" class="grid" style="gap:12px;">
+      <input type="hidden" name="tab" value="schedule">
+      
+      <div class="field" style="border-bottom: 1px dashed var(--border-color); padding-bottom: 15px;">
+        <label style="color: #ef4444; font-weight: 600;">Derrubar e Reiniciar Serviços (HH:MM)</label>
+        <div class="control" style="margin-top: 6px;"><input type="time" name="scheduled_time" value="{{cfg.scheduled_time}}"></div>
+        <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-top: 10px; font-size: 14px;">
+          {% set days = cfg.scheduled_days.split(',') if cfg.scheduled_days else [] %}
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" name="scheduled_days" value="0" {% if '0' in days %}checked{% endif %}> Dom</label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" name="scheduled_days" value="1" {% if '1' in days %}checked{% endif %}> Seg</label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" name="scheduled_days" value="2" {% if '2' in days %}checked{% endif %}> Ter</label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" name="scheduled_days" value="3" {% if '3' in days %}checked{% endif %}> Qua</label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" name="scheduled_days" value="4" {% if '4' in days %}checked{% endif %}> Qui</label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" name="scheduled_days" value="5" {% if '5' in days %}checked{% endif %}> Sex</label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" name="scheduled_days" value="6" {% if '6' in days %}checked{% endif %}> Sáb</label>
+        </div>
+      </div>
+
+      <div class="field" style="padding-top: 5px;">
+        <label style="color: #3b82f6; font-weight: 600;">Limpeza Inteligente de SYSTEM/SPOOL (HH:MM)</label>
+        <div class="control" style="margin-top: 6px; display: flex; gap: 10px;">
+          <input type="time" name="cleanup_time" value="{{cfg.cleanup_time}}" style="flex: 1;">
+          <button class="btn" type="button" id="btnRunCleanup" onclick="runManualCleanup()" style="white-space: nowrap;">▶ Executar Agora</button>
+        </div>
+        <div class="small-muted" style="margin-top: 5px; font-size: 11px;">Mapeia os INIs e elimina *.tmp e cdx inúteis de todos os servidores de aplicação.</div>
+        <div id="cleanupMsg" style="font-size: 13px; font-weight: bold; margin-top: 8px; line-height: 1.4;"></div>
+      </div>
+
+      <button class="btn" type="submit" style="margin-top: 10px;">Salvar Agendamentos</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="cardHeader">
+      <h2 class="cardTitle">Rede, WinRM e Webhooks</h2>
+      <div class="small-muted">Acesso remoto e alertas instantâneos (Teams)</div>
+    </div>
+
+    <form method="post" class="grid" style="gap:12px;">
+      <input type="hidden" name="tab" value="network">
+      <div class="field">
+        <label>Usuário WinRM (ex: DOMINIO\Admin)</label>
+        <div class="control"><input name="winrm_user" value="{{cfg.winrm_user}}"></div>
+      </div>
+      <div class="field">
+        <label>Senha</label>
+        <div class="control"><input name="winrm_password" type="password" value="{{cfg.winrm_password}}"></div>
+      </div>
+      <div class="field">
+        <label>Protocolo de Transporte</label>
+        <div class="control">
+            <select name="winrm_transport" style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color);">
+                <option value="ntlm" {% if cfg.winrm_transport == 'ntlm' %}selected{% endif %}>NTLM (Padrão Windows)</option>
+                <option value="basic" {% if cfg.winrm_transport == 'basic' %}selected{% endif %}>Basic</option>
+                <option value="credssp" {% if cfg.winrm_transport == 'credssp' %}selected{% endif %}>CredSSP</option>
+            </select>
+        </div>
+      </div>
+      <div class="field" style="display: flex; align-items: center; gap: 10px; margin-top: 5px; margin-bottom: 5px;">
+        <input type="checkbox" id="winrm_ssl" name="winrm_ssl" {% if cfg.winrm_ssl %}checked{% endif %} style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;">
+        <label for="winrm_ssl" style="margin: 0; cursor: pointer; font-weight: 600; color: #1e293b;">Usar SSL (Porta 5986)</label>
+      </div>
+
+      <div class="field" style="margin-top: 15px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
+        <label style="color: #6366f1; font-weight: bold; display: flex; align-items: center; gap: 5px;">
+          <span style="font-size: 18px;">🔗</span> URL Webhook (Microsoft Teams)
+        </label>
+        <div class="control">
+          <input name="webhook_url" value="{{cfg.webhook_url}}" placeholder="https://outlook.office.com/webhook/..." style="border: 1px solid #6366f1; background-color: #f5f3ff;">
+        </div>
+        <p style="font-size: 11px; color: #64748b; margin-top: 4px;">Os alertas de <b>Auto-Healing</b> e quedas críticas serão enviados em tempo real para este canal.</p>
+      </div>
+
+      <div style="display: flex; gap: 8px; align-items: center; margin-top: 10px; width: 100%;">
+        <button class="btn" type="submit" style="flex: 1; padding: 10px 0; font-size: 13px;">Salvar Rede</button>
+        <button class="btn" type="button" id="btnTestWinrm" onclick="testWinrm()" style="flex: 1; padding: 10px 0; font-size: 13px;"> Testar WinRM</button>
+        <button class="btn" type="button" id="btnTestWebhook" onclick="testWebhook()" style="flex: 1; padding: 10px 0; font-size: 13px;"> Testar Teams</button>
+      </div>
+      <div id="winrmMsg" style="font-size: 12px; font-weight: bold; margin-top: 8px; min-height: 18px; text-align: center;"></div>
+      <div id="webhookMsg" style="font-size: 12px; font-weight: bold; margin-top: 8px; min-height: 18px; text-align: center;"></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="cardHeader">
+      <h2 class="cardTitle">Banco SQL</h2>
+      <div class="small-muted">Menu 3/5</div>
+    </div>
+
+    <form method="post" class="grid" style="gap:12px;">
+      <input type="hidden" name="tab" value="sql">
+      <div class="field">
+        <label>Host/IP</label>
+        <div class="control"><input name="sql_host" value="{{cfg.sql_host}}"></div>
+      </div>
+      <div class="field">
+        <label>Usuário</label>
+        <div class="control"><input name="sql_user" value="{{cfg.sql_user}}"></div>
+      </div>
+      <div class="field">
+        <label>Senha</label>
+        <div class="control"><input name="sql_password" type="password" value="{{cfg.sql_password}}"></div>
+      </div>
+      <div class="field">
+        <label>Database</label>
+        <div class="control"><input name="sql_database" value="{{cfg.sql_database}}"></div>
+      </div>
+      
+      <div style="display: flex; gap: 8px; align-items: center; margin-top: 10px;">
+        <button class="btn" type="submit" style="flex: 1;">Salvar SQL</button>
+        <button class="btn" type="button" id="btnTestSql" onclick="testSql()" style="flex: 1;"> Testar Conexão SQL</button>
+      </div>
+      <div id="sqlMsg" style="font-size: 13px; font-weight: bold; margin-top: 8px; text-align: center;"></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="cardHeader">
+      <h2 class="cardTitle">Limites (alertas)</h2>
+      <div class="small-muted">Globais</div>
+    </div>
+
+    <form method="post" class="grid" style="gap:12px;">
+      <input type="hidden" name="tab" value="thresholds">
+      <div class="field">
+        <label>Disco mínimo livre (%)</label>
+        <div class="control"><input name="disk_min_free_percent" value="{{cfg.disk_min_free_percent}}"></div>
+      </div>
+      <div class="field">
+        <label>CPU máximo (%)</label>
+        <div class="control"><input name="cpu_max_percent" value="{{cfg.cpu_max_percent}}"></div>
+      </div>
+      <div class="field">
+        <label>Memória máximo (%)</label>
+        <div class="control"><input name="mem_max_percent" value="{{cfg.mem_max_percent}}"></div>
+      </div>
+      <button class="btn" type="submit">Salvar limites</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="cardHeader">
+      <h2 class="cardTitle">Trocar senha</h2>
+      <div class="small-muted">Usuário logado</div>
+    </div>
+
+    <form method="post" class="grid" style="gap:12px;">
+      <input type="hidden" name="tab" value="password">
+      <div class="field">
+        <label>Senha atual</label>
+        <div class="control"><input name="current_password" type="password"></div>
+      </div>
+      <div class="field">
+        <label>Nova senha</label>
+        <div class="control"><input name="new_password" type="password"></div>
+      </div>
+      <div class="field">
+        <label>Confirmar nova senha</label>
+        <div class="control"><input name="new_password2" type="password"></div>
+      </div>
+      <button class="btn" type="submit">Atualizar senha</button>
+    </form>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function testSmtp() {
+    const btn = document.getElementById('btnTestEmail');
+    const msg = document.getElementById('testMsg');
+    
+    btn.disabled = true;
+    btn.innerText = "Conectando...";
+    msg.style.color = "#3b82f6";
+    msg.innerText = "Iniciando comunicação com o servidor SMTP...";
+
+    try {
+        const response = await fetch("{{ url_for('settings.test_email') }}", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        });
+        
+        const data = await response.json();
+        
+        if (data.ok) {
+            msg.style.color = "#10b981";
+            msg.innerText = data.message;
+        } else {
+            msg.style.color = "#ef4444";
+            msg.innerText = "❌ " + data.message;
+        }
+    } catch (error) {
+        msg.style.color = "#ef4444";
+        msg.innerText = "❌ Erro fatal: O servidor Flask não conseguiu processar o pedido de teste.";
+    } finally {
+        btn.disabled = false;
+        btn.innerText = "Testar Envio";
+    }
+}
+
+async function runManualCleanup() {
+    const btn = document.getElementById('btnRunCleanup');
+    const msg = document.getElementById('cleanupMsg');
+    
+    btn.disabled = true;
+    btn.innerText = "A iniciar...";
+    msg.style.color = "#f59e0b";
+    msg.innerText = "A ordenar limpeza na rede...";
+
+    try {
+        const response = await fetch("{{ url_for('settings.manual_cleanup') }}", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        });
+        
+        const data = await response.json();
+        
+        if (data.ok) {
+            msg.style.color = "#10b981";
+            msg.innerText = "✅ " + data.message;
+        } else {
+            msg.style.color = "#ef4444";
+            msg.innerText = "❌ " + data.message;
+        }
+    } catch (error) {
+        msg.style.color = "#ef4444";
+        msg.innerText = "❌ Erro ao contactar o motor. A rotina pode ter falhado.";
+    } finally {
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.innerText = "▶ Executar Agora";
+        }, 5000); 
+    }
+}
+
+async function testWebhook() {
+    const btn = document.getElementById('btnTestWebhook');
+    const msg = document.getElementById('webhookMsg');
+    
+    btn.disabled = true;
+    btn.innerText = "Enviando...";
+    msg.style.color = "#3b82f6";
+    msg.innerText = "A comunicar com o Teams...";
+
+    try {
+        const response = await fetch("{{ url_for('settings.test_webhook') }}", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        });
+        
+        const data = await response.json();
+        
+        if (data.ok) {
+            msg.style.color = "#10b981";
+            msg.innerText = "✅ " + data.message;
+        } else {
+            msg.style.color = "#ef4444";
+            msg.innerText = "❌ " + data.message;
+        }
+    } catch (error) {
+        msg.style.color = "#ef4444";
+        msg.innerText = "❌ Erro crítico ao disparar o teste.";
+    } finally {
+        btn.disabled = false;
+        btn.innerText = "🚀 Testar Teams";
+    }
+}
+
+async function testWinrm() {
+    const btn = document.getElementById('btnTestWinrm');
+    const msg = document.getElementById('winrmMsg');
+    
+    btn.disabled = true;
+    btn.innerText = "Conectando...";
+    msg.style.color = "#f59e0b";
+    msg.innerText = "Tentando WinRM...";
+
+    try {
+        const response = await fetch("{{ url_for('settings.test_winrm') }}", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        });
+        
+        const data = await response.json();
+        
+        if (data.ok) {
+            msg.style.color = "#10b981";
+            msg.innerText = "✅ " + data.message;
+        } else {
+            msg.style.color = "#ef4444";
+            msg.innerText = "❌ " + data.message;
+        }
+    } catch (error) {
+        msg.style.color = "#ef4444";
+        msg.innerText = "❌ Erro fatal ao disparar o teste WinRM.";
+    } finally {
+        btn.disabled = false;
+        btn.innerText = " Testar WinRM";
+    }
+}
+
+async function testSql() {
+    const btn = document.getElementById('btnTestSql');
+    const msg = document.getElementById('sqlMsg');
+    
+    btn.disabled = true;
+    btn.innerText = "Testando...";
+    msg.style.color = "#3b82f6";
+    msg.innerText = "Conectando ao banco...";
+
+    try {
+        const response = await fetch("{{ url_for('settings.test_sql') }}", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        });
+        
+        const data = await response.json();
+        
+        if (data.ok) {
+            msg.style.color = "#10b981";
+            msg.innerText = "✅ " + data.message;
+        } else {
+            msg.style.color = "#ef4444";
+            msg.innerText = "❌ " + data.message;
+        }
+    } catch (error) {
+        msg.style.color = "#ef4444";
+        msg.innerText = "❌ Erro ao contactar o servidor Flask.";
+    } finally {
+        btn.disabled = false;
+        btn.innerText = " Testar Conexão SQL";
+    }
+}
+</script>
+{% endblock %}

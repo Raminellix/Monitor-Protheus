@@ -1,0 +1,422 @@
+{% extends "layout.html" %}
+{% block title %}Servidores | Weepulse{% endblock %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; gap: 20px; flex-wrap: wrap;">
+  <div>
+    <h1 class="h1" style="margin-bottom: 5px;">2) Monitoramento de Servidores</h1>
+    <p class="sub">Status em tempo real, histórico contínuo de performance e logs críticos.</p>
+  </div>
+
+  <div style="display: flex; gap: 10px; align-items: center;">
+    <span class="small-muted" style="font-weight: bold; text-transform: uppercase; font-size: 10px;">Alertas Globais:</span>
+    <div style="display: flex; gap: 8px;">
+      <div title="Mínimo de Disco Livre" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); padding: 4px 10px; border-radius: 20px; font-size: 12px; color: #ef4444; display: flex; align-items: center; gap: 5px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+        <b>{{ cfg.disk_min_free_percent }}%</b> Livre
+      </div>
+      <div title="Máximo de CPU" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); padding: 4px 10px; border-radius: 20px; font-size: 12px; color: #ef4444; display: flex; align-items: center; gap: 5px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"></rect><rect x="9" y="9" width="6" height="6"></rect><path d="M15 2v2"></path><path d="M15 20v2"></path><path d="M2 15h2"></path><path d="M2 9h2"></path><path d="M20 15h2"></path><path d="M20 9h2"></path><path d="M9 2v2"></path><path d="M9 20v2"></path></svg>
+        <b>{{ cfg.cpu_max_percent }}%</b> CPU
+      </div>
+      <div title="Máximo de RAM" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); padding: 4px 10px; border-radius: 20px; font-size: 12px; color: #ef4444; display: flex; align-items: center; gap: 5px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19v-3"></path><path d="M10 19v-3"></path><path d="M14 19v-3"></path><path d="M18 19v-3"></path><path d="M8 11V9"></path><path d="M16 11V9"></path><rect x="3" y="11" width="18" height="5" rx="2"></rect><path d="M3 14h18"></path></svg>
+        <b>{{ cfg.mem_max_percent }}%</b> RAM
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  #toastContainer { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
+  .toast { background: var(--bg-card); border-left: 5px solid #ef4444; box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 15px 20px; border-radius: 6px; min-width: 300px; color: var(--text-main); font-size: 14px; animation: slideIn 0.3s ease-out forwards; display: flex; align-items: flex-start; justify-content: space-between; }
+  .toast-content b { color: #ef4444; font-size: 15px; display: block; margin-bottom: 4px; }
+  .toast-close { background: none; border: none; font-size: 16px; cursor: pointer; color: var(--text-muted); }
+
+  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  @keyframes fadeOut { to { opacity: 0; transform: translateY(-10px); } }
+
+  .stack-container { display: flex; flex-direction: column; gap: 20px; }
+
+  .seg { display:inline-flex; border: 1px solid var(--border-color); border-radius: 999px; overflow:hidden; }
+  .seg button { border:none; background:transparent; padding:6px 10px; cursor:pointer; font-size:12px; color: var(--text-muted); }
+  .seg button.active { background: rgba(59,130,246,0.12); color: var(--text-main); font-weight: 700; }
+</style>
+
+<div id="toastContainer"></div>
+
+<div class="card" style="margin-bottom: 20px; padding: 12px 20px;">
+  <div style="display:flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+    <button class="btn secondary small" type="button" onclick="scanServersNow()">🔄 Forçar Scan</button>
+
+    <div style="display:flex; gap:15px; align-items:center;">
+      <span class="small-muted">Intervalo Tela:</span>
+      <select id="serverRefreshSelect" style="width: 80px !important; padding: 4px !important;">
+        <option value="0">Off</option>
+        <option value="5">5s</option>
+        <option value="10" selected>10s</option>
+        <option value="30">30s</option>
+        <option value="60">60s</option>
+      </select>
+      <span id="serverScanStatus" class="small-muted" style="font-size: 11px; border-left: 1px solid var(--border-color); padding-left: 15px;">Aguardando...</span>
+    </div>
+  </div>
+</div>
+
+<div class="stack-container">
+  <div id="serversBody">
+    <div class="small-muted">Carregando métricas e histórico do banco de dados...</div>
+  </div>
+
+  <section class="card">
+    <div class="cardHeader">
+      <h2 class="cardTitle">Logs Críticos do Windows (Últimas 24h)</h2>
+      <p class="small-muted">Auditoria de erros de sistema para o servidor selecionado.</p>
+    </div>
+    <div style="display:flex; gap: 10px; margin-bottom: 12px; align-items: center;">
+      <select id="logServerSelect" style="flex: 1;"></select>
+      <button class="btn primary small" style="width: auto !important;" onclick="triggerLoadLogs()">Buscar Logs</button>
+    </div>
+    <div id="evServerLabel" class="small-muted" style="margin-bottom: 8px;"></div>
+    <div id="evList" style="display:grid; gap:10px; max-height: 300px; overflow-y: auto; padding-right: 5px;"></div>
+
+    <div id="evModal" style="display:none; margin-top:12px; border-left: 4px solid #ef4444;">
+      <div class="card" style="background-color: rgba(239, 68, 68, 0.05); border-color: rgba(239, 68, 68, 0.2);">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <b style="color: #ef4444;">Detalhe do Erro</b>
+          <button style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 18px;" onclick="closeEv()">✕</button>
+        </div>
+        <pre id="evDetail" style="white-space:pre-wrap; font-size: 13px; margin-top: 10px; font-family: monospace; color: var(--text-main);"></pre>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let serverTimer = null;
+let serverScanning = false;
+let globalEventData = [];
+
+let rankMode = localStorage.getItem("weepulse_rankMode") || "cpu"; // cpu | mem
+
+// Resgatar o limite de disco das configurações para usar no alerta visual
+const minDiskFreePercent = {{ cfg.disk_min_free_percent if cfg else 10 }};
+
+function setServerScanStatus(text){ document.getElementById("serverScanStatus").textContent = text || ""; }
+function escapeHtml(s){ return (s || "").toString().replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"); }
+
+function showToast(title, messages) {
+  const container = document.getElementById("toastContainer");
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  let msgHtml = messages.map(m => `<div>• ${escapeHtml(m)}</div>`).join("");
+  toast.innerHTML = `<div class="toast-content"><b>⚠️ ${escapeHtml(title)}</b>${msgHtml}</div><button class="toast-close" onclick="this.parentElement.remove()">✕</button>`;
+  container.appendChild(toast);
+  setTimeout(() => { toast.style.animation = "fadeOut 0.3s forwards"; setTimeout(() => toast.remove(), 300); }, 15000);
+}
+
+function renderTopTable(h){
+  const isCpu = rankMode === "cpu";
+  const rows = isCpu ? (h.top_cpu_processes || []) : (h.top_mem_processes || []);
+
+  if (!rows.length) return `<div class="small-muted">Sem dados de processos.</div>`;
+
+  if (isCpu) {
+    return `
+      <div style="overflow-x:auto;">
+        <table class="table" style="min-width: 520px;">
+          <thead>
+            <tr style="background: var(--bg-body);">
+              <th>Processo</th>
+              <th style="text-align:center;">PID</th>
+              <th style="text-align:center;">CPU</th>
+              <th style="text-align:center;">RAM (WS)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(p => `
+              <tr>
+                <td><b>${escapeHtml(p.name)}</b></td>
+                <td style="text-align:center;">${(p.pid === null || p.pid === undefined) ? '-' : p.pid}</td>
+                <td style="text-align:center;">${Number(p.cpu_percent || 0).toFixed(1)}%</td>
+                <td style="text-align:center;">${(p.working_set_mb === null || p.working_set_mb === undefined) ? '-' : (Number(p.working_set_mb).toFixed(1) + ' MB')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  return `
+    <div style="overflow-x:auto;">
+      <table class="table" style="min-width: 520px;">
+        <thead>
+          <tr style="background: var(--bg-body);">
+            <th>Processo</th>
+            <th style="text-align:center;">PID</th>
+            <th style="text-align:center;">RAM (WS)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(p => `
+            <tr>
+              <td><b>${escapeHtml(p.name)}</b></td>
+              <td style="text-align:center;">${(p.pid === null || p.pid === undefined) ? '-' : p.pid}</td>
+              <td style="text-align:center;">${(p.working_set_mb === null || p.working_set_mb === undefined) ? '-' : (Number(p.working_set_mb).toFixed(1) + ' MB')}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function setRankMode(mode){
+  rankMode = mode;
+  localStorage.setItem("weepulse_rankMode", mode);
+  scanServersNow();
+}
+
+function renderServerCards(items){
+  const container = document.getElementById("serversBody");
+  const logSelect = document.getElementById("logServerSelect");
+  const currentSel = logSelect.value;
+
+  let optionsHtml = `<option value="">-- Selecione o servidor --</option>`;
+
+  for (let id in Chart.instances) { Chart.instances[id].destroy(); }
+  let html = "";
+
+  items.forEach((h, index) => {
+    if (h.alerts && h.alerts.length > 0) showToast(h.server_name, h.alerts);
+
+    optionsHtml += `<option value="${h.server_address}|${h.server_name}">${h.server_name} (${h.server_address})</option>`;
+
+    const cpuWarn = (h.alerts && h.alerts.some(a => a.includes("CPU")));
+    const memWarn = (h.alerts && h.alerts.some(a => a.includes("Memória")));
+
+    const hasDiag = (h.winrm_stderr && h.winrm_stderr.length) || (h.winrm_stdout_preview && h.winrm_stdout_preview.length) || (h.ps_debug && Object.keys(h.ps_debug).length);
+
+    // ==========================================
+    // GERAÇÃO DO HTML DOS DISCOS (HDs) COM LARGURA 100%
+    // ==========================================
+    let disksHtml = '';
+    if (h.disks && h.disks.length > 0) {
+      disksHtml = `
+      <div style="width: 100%; background: rgba(0,0,0,0.01); border-radius: 8px; padding: 15px; margin-bottom: 20px; border: 1px solid var(--border-color);">
+        <b style="color: var(--text-main); font-size: 14px; margin-bottom: 15px; display: flex; align-items: center; gap: 5px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="12" x2="2" y2="12"></line><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path><line x1="6" y1="16" x2="6.01" y2="16"></line><line x1="10" y1="16" x2="10.01" y2="16"></line></svg>
+          Armazenamento (Discos)
+        </b>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px;">`;
+      
+      h.disks.forEach(d => {
+        const freePct = Number(d.free_percent || 0);
+        const usedPct = 100 - freePct;
+        const isDanger = freePct <= minDiskFreePercent;
+        const barColor = isDanger ? '#ef4444' : '#3b82f6';
+        
+        // Formatar ms (tratamento caso o WMI venha vazio)
+        const rMs = (d.read_ms !== null && d.read_ms !== undefined && d.read_ms !== "") ? d.read_ms : "0.0";
+        const wMs = (d.write_ms !== null && d.write_ms !== undefined && d.write_ms !== "") ? d.write_ms : "0.0";
+
+        disksHtml += `
+          <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                  <b style="color: var(--text-main); font-size: 15px;">Unidade ${escapeHtml(d.mount)}</b>
+                  <span style="font-size: 13px; font-weight: bold; color: ${barColor};">${freePct.toFixed(1)}% Livre</span>
+              </div>
+              <div style="background: var(--border-color); border-radius: 4px; width: 100%; height: 10px; overflow: hidden; margin-bottom: 10px;">
+                  <div style="background: ${barColor}; height: 100%; width: ${usedPct}%; transition: width 0.5s ease;"></div>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted);">
+                  <span>Uso: <b style="color: var(--text-main);">${escapeHtml(d.used_gb)} GB</b></span>
+                  <span>Total: <b style="color: var(--text-main);">${escapeHtml(d.total_gb)} GB</b></span>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-top: 10px; border-top: 1px dashed var(--border-color); padding-top: 10px;">
+                  <span title="Tempo médio de resposta de Leitura (Ideal < 10ms)">Leitura: <b>${escapeHtml(rMs)} ms</b></span>
+                  <span title="Tempo médio de resposta de Escrita (Ideal < 10ms)">Escrita: <b>${escapeHtml(wMs)} ms</b></span>
+              </div>
+          </div>`;
+      });
+      disksHtml += `</div></div>`;
+    }
+
+    html += `
+      <div class="card" style="margin-bottom:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <div>
+              <b style="font-size: 18px; color: var(--text-main);">${escapeHtml(h.server_name)}</b>
+              <span class="small-muted">(${escapeHtml(h.server_address)})</span>
+            </div>
+            <div style="margin-top: 6px; display: flex; gap: 15px; font-size: 12px; color: var(--text-muted);">
+              <span>Uptime: <b>${escapeHtml(h.uptime)}</b></span>
+              <span>Ping: <b>${escapeHtml(h.latency)}</b></span>
+              ${h.status && h.status !== "OK" ? `<span style="color:#ef4444;">Status: <b>${escapeHtml(h.status)}</b></span>` : ``}
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 20px;">
+            <div style="display: flex; align-items: center; gap: 6px; ${cpuWarn ? 'color:#ef4444; font-weight:bold;' : ''}">
+              <span>CPU: ${h.cpu_percent}%</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; ${memWarn ? 'color:#ef4444; font-weight:bold;' : ''}">
+              <span>RAM: ${h.mem_percent}%</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 10px; margin-bottom: 20px; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; background: rgba(0,0,0,0.01);">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap: wrap; margin-bottom: 8px;">
+            <div class="small-muted" style="font-weight: bold;">
+              ${rankMode === "cpu" ? "Top processos por CPU (snapshot)" : "Top processos por Memória (Working Set)"}
+            </div>
+
+            <div class="seg">
+              <button type="button" class="${rankMode === "cpu" ? "active" : ""}" onclick="setRankMode('cpu')">CPU</button>
+              <button type="button" class="${rankMode === "mem" ? "active" : ""}" onclick="setRankMode('mem')">Memória</button>
+            </div>
+          </div>
+
+          ${renderTopTable(h)}
+
+          ${
+            hasDiag
+            ? `<details style="margin-top:10px;">
+                 <summary class="small-muted" style="cursor:pointer;">Diagnóstico WinRM/PowerShell</summary>
+                 ${h.winrm_status_code !== undefined && h.winrm_status_code !== null ? `<div class="small-muted" style="margin-top:8px;"><b>status_code:</b> ${escapeHtml(h.winrm_status_code)}</div>` : ``}
+                 ${h.winrm_stderr ? `<div class="small-muted" style="margin-top:8px;"><b>stderr:</b></div><pre style="white-space:pre-wrap; font-size:12px; margin-top:6px; padding:10px; border:1px dashed var(--border-color); border-radius:8px;">${escapeHtml(h.winrm_stderr)}</pre>` : ``}
+                 ${h.winrm_stdout_preview ? `<div class="small-muted" style="margin-top:8px;"><b>stdout preview:</b></div><pre style="white-space:pre-wrap; font-size:12px; margin-top:6px; padding:10px; border:1px dashed var(--border-color); border-radius:8px;">${escapeHtml(h.winrm_stdout_preview)}</pre>` : ``}
+                 ${h.ps_debug ? `<div class="small-muted" style="margin-top:8px;"><b>ps_debug:</b></div><pre style="white-space:pre-wrap; font-size:12px; margin-top:6px; padding:10px; border:1px dashed var(--border-color); border-radius:8px;">${escapeHtml(JSON.stringify(h.ps_debug, null, 2))}</pre>` : ``}
+               </details>`
+            : ``
+          }
+        </div>
+
+        <div style="width: 100%; height: 200px; background: rgba(0,0,0,0.01); border-radius: 8px; padding: 10px; margin-bottom: 20px; border: 1px solid var(--border-color);">
+          <canvas id="chart_${index}"></canvas>
+        </div>
+        
+        ${disksHtml}
+
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+  logSelect.innerHTML = optionsHtml;
+  if (currentSel) logSelect.value = currentSel;
+
+  items.forEach((h, index) => {
+    const ctx = document.getElementById(`chart_${index}`).getContext('2d');
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+
+    const arrLabels = (h.history || []).map(pt => new Date(pt.time).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit', second:'2-digit'}));
+    const arrCpu = (h.history || []).map(pt => pt.cpu);
+    const arrMem = (h.history || []).map(pt => pt.mem);
+
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: arrLabels,
+        datasets: [
+          { label: 'CPU %', data: arrCpu, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', tension: 0.4, fill: true, pointRadius: 2 },
+          { label: 'RAM %', data: arrMem, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', tension: 0.4, fill: true, pointRadius: 2 }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        scales: {
+          y: { min: 0, max: 100, grid: { color: isDark ? '#334155' : '#e2e8f0' } },
+          x: { grid: { display: false } }
+        },
+        plugins: { legend: { position: 'top', align: 'end' } }
+      }
+    });
+  });
+}
+
+async function scanServersNow(){
+  if (serverScanning) return;
+  serverScanning = true;
+  setServerScanStatus("Escaneando e montando histórico...");
+
+  try{
+    const r = await fetch("{{ url_for('servers.scan_json') }}");
+    const data = await r.json();
+
+    if (data.ok) {
+      const healthItems = data.health || [];
+
+      const fetchPromises = healthItems.map(async (srv) => {
+        if (srv.server_id) {
+          const url = "{{ url_for('servers.history_json', server_id=0) }}".replace('0', srv.server_id) + "?minutes=30";
+          const hRes = await fetch(url);
+          const hData = await hRes.json().catch(() => ({}));
+          srv.history = hData.history || [];
+        } else {
+          srv.history = [];
+        }
+      });
+
+      await Promise.all(fetchPromises);
+      renderServerCards(healthItems);
+    }
+
+    setServerScanStatus(`Última atualização: ${new Date().toLocaleTimeString()}`);
+  } catch(e) {
+    setServerScanStatus("Erro de conexão");
+  }
+
+  serverScanning = false;
+}
+
+function setupServerAutoScan(){
+  if (serverTimer) clearInterval(serverTimer);
+  const sec = parseInt(document.getElementById("serverRefreshSelect").value);
+  if (sec > 0) serverTimer = setInterval(scanServersNow, sec * 1000);
+}
+
+function triggerLoadLogs(){
+  const sel = document.getElementById("logServerSelect");
+  if (!sel.value) return;
+  const p = sel.value.split('|');
+  loadEvents(p[0], p[1]);
+}
+
+async function loadEvents(addr){
+  const el = document.getElementById("evList");
+  el.innerHTML = "<div class='small-muted'>Consultando Event Viewer...</div>";
+  try {
+    const res = await fetch("{{ url_for('servers.event_logs') }}", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({server: addr})
+    });
+    const data = await res.json();
+    globalEventData = data.items || [];
+    el.innerHTML = globalEventData.length ? "" : "<div class='small-muted'>Nenhum erro crítico nas últimas 24h.</div>";
+    globalEventData.forEach(it => {
+      const d = document.createElement("div");
+      d.className = "card";
+      d.style = "padding:12px; cursor:pointer; margin-bottom:8px; border-left:4px solid #ef4444; background: var(--bg-card); transition: 0.2s;";
+      d.innerHTML = `<div style='font-size:11px; color:var(--text-muted);'>${it.time} | ${it.source}</div><div style='color:var(--text-main); margin-top:4px;'>${it.message.substring(0,100)}...</div>`;
+      d.onclick = () => { document.getElementById("evDetail").innerText = it.message; document.getElementById("evModal").style.display="block"; };
+      el.appendChild(d);
+    });
+  } catch(e) { el.innerHTML = "Erro ao carregar logs."; }
+}
+
+function closeEv(){ document.getElementById("evModal").style.display="none"; }
+document.getElementById("serverRefreshSelect").addEventListener("change", setupServerAutoScan);
+setupServerAutoScan();
+window.onload = scanServersNow;
+</script>
+{% endblock %}

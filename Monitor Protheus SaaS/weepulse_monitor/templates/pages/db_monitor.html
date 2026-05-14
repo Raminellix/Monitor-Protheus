@@ -1,0 +1,124 @@
+{% extends "layout.html" %}
+{% block title %}Monitor Banco | Weepulse{% endblock %}
+
+{% block content %}
+<h1 class="h1">5) Monitoramento de Banco</h1>
+<p class="sub">Auditoria completa de Performance, Waits, Fragmentação e Consultas Lentas (Top 20).</p>
+
+<style>
+  /* === ANIMAÇÃO PROFISSIONAL DE CARREGAMENTO === */
+  .loader-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 20px;
+    background-color: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    margin-top: 20px;
+  }
+  .custom-loader {
+    width: 60px;
+    height: 60px;
+    border: 5px solid #e2e8f0;
+    border-bottom-color: #3b82f6;
+    border-radius: 50%;
+    display: inline-block;
+    box-sizing: border-box;
+    animation: rotation 1s linear infinite;
+    margin-bottom: 25px;
+  }
+  @keyframes rotation {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  .loader-text {
+    font-size: 18px;
+    color: #1e293b;
+    font-weight: bold;
+    margin-bottom: 8px;
+    animation: pulseText 1.5s ease-in-out infinite;
+  }
+  @keyframes pulseText {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  .loader-subtext {
+    color: #64748b;
+    font-size: 14px;
+  }
+</style>
+
+<section class="card">
+  <div class="cardHeader" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 15px;">
+    <div>
+        <h2 class="cardTitle">Diagnóstico de Saúde SQL Server</h2>
+        <div class="small-muted" style="margin-top: 5px;">A execução extrairá dados detalhados das DMVs. Pode levar até 1 minuto.</div>
+    </div>
+    
+    <button class="btn" type="button" id="btnRun" onclick="runMonitor()" style="background-color: #3b82f6; font-weight: bold; width: auto; padding: 10px 20px;">
+      ▶ Iniciar Varredura de Banco
+    </button>
+  </div>
+
+  <div id="loadingBox" style="display:none;">
+      <div class="loader-container">
+          <div class="custom-loader"></div>
+          <div class="loader-text">Analisando Banco de Dados...</div>
+          <div class="loader-subtext">Calculando Fragmentações, Waits e Extraindo Consultas Lentas.</div>
+      </div>
+  </div>
+
+  <div id="resultContainer" style="display:none; margin-top: 20px;">
+    <div style="border:1px solid #e2e8f0; border-radius:8px; padding:0; background: #ffffff; overflow:auto; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);" id="htmlContent">
+      </div>
+  </div>
+  
+  <div id="initMessage" style="text-align:center; padding: 60px; color: #94a3b8; border: 1px dashed #cbd5e1; border-radius: 8px; margin-top: 20px; background-color: #f8fafc;">
+      <h3 style="margin-top: 0; color: #475569;">O Relatório SQL será exibido aqui</h3>
+      <p style="margin: 0;">Clique no botão azul acima para gerar a análise em tempo real.</p>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function runMonitor(){
+    const btn = document.getElementById("btnRun");
+    const loading = document.getElementById("loadingBox");
+    const result = document.getElementById("resultContainer");
+    const initMsg = document.getElementById("initMessage");
+    const htmlContent = document.getElementById("htmlContent");
+
+    // Prepara a tela
+    btn.disabled = true;
+    btn.innerText = "Executando...";
+    btn.style.opacity = "0.7";
+    initMsg.style.display = "none";
+    result.style.display = "none";
+    loading.style.display = "block";
+
+    try {
+        const res = await fetch("{{ url_for('dbmon.run_monitor') }}", {
+            method: "POST"
+        });
+        
+        const data = await res.json();
+        
+        // Injeta o HTML retornado direto na DIV
+        htmlContent.innerHTML = data.html;
+        result.style.display = "block";
+        
+    } catch (e) {
+        htmlContent.innerHTML = `<div style="color:#ef4444; font-weight:bold; padding: 20px;">Erro fatal de conexão com o backend do Weepulse.</div>`;
+        result.style.display = "block";
+    } finally {
+        loading.style.display = "none";
+        btn.disabled = false;
+        btn.style.opacity = "1";
+        btn.innerText = "▶ Executar Novamente";
+    }
+}
+</script>
+{% endblock %}

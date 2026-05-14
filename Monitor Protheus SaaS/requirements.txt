@@ -1,0 +1,12 @@
+Flask==3.0.2
+Flask-Login==0.6.3
+Flask-SQLAlchemy==3.1.1
+Flask-WTF==1.2.1
+WTForms==3.1.2
+email-validator==2.1.1
+python-dotenv==1.0.1
+requests==2.31.0
+Werkzeug==3.0.1
+pywin32
+pywinrm==0.4.3
+

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentação Oficial - Weepulse Monitor</title>
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --bg-body: #f8fafc;
+            --bg-card: #ffffff;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --accent: #10b981;
+        }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+        }
+
+        header {
+            background-color: #0f172a;
+            color: white;
+            padding: 40px 20px;
+            text-align: center;
+            border-bottom: 4px solid var(--primary);
+        }
+
+        header h1 { margin: 0; font-size: 2.5rem; letter-spacing: -0.5px; }
+        header p { color: #94a3b8; font-size: 1.1rem; margin-top: 10px; }
+
+        .container {
+            max-width: 950px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 35px;
+            margin-bottom: 40px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+
+        h2 { 
+            color: var(--primary); 
+            border-bottom: 2px solid var(--border); 
+            padding-bottom: 10px; 
+            margin-top: 0; 
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        h3 { color: #334155; margin-top: 25px; font-size: 1.2rem; }
+        
+        ul { padding-left: 20px; color: #475569; }
+        li { margin-bottom: 8px; }
+
+        code {
+            background-color: #f1f5f9;
+            padding: 3px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            color: #db2777;
+        }
+
+        .alert {
+            background-color: #fffbeb;
+            border-left: 4px solid #f59e0b;
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 0 6px 6px 0;
+            color: #b45309;
+            font-size: 0.95rem;
+        }
+
+        /* BLOCO PARA INSERÇÃO DE PRINTS */
+        .print-placeholder {
+            background-color: #f8fafc;
+            border: 2px dashed #cbd5e1;
+            border-radius: 8px;
+            padding: 40px 20px;
+            text-align: center;
+            margin: 25px 0;
+            color: #64748b;
+            transition: all 0.2s;
+        }
+        .print-placeholder:hover {
+            border-color: var(--primary);
+            background-color: #f0fdf4;
+        }
+        .print-placeholder img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            display: none;
+        }
+        .print-placeholder.has-image {
+            padding: 0;
+            border: none;
+            background: transparent;
+        }
+        .print-placeholder.has-image .placeholder-text { display: none; }
+        .print-placeholder.has-image img { display: block; }
+
+        .tag {
+            display: inline-block;
+            background: var(--primary);
+            color: white;
+            font-size: 11px;
+            font-weight: bold;
+            padding: 3px 8px;
+            border-radius: 12px;
+            vertical-align: middle;
+            margin-bottom: 3px;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Weepulse Monitor</h1>
+    <p>Guia de Implantação e Operação do Sistema de Observabilidade para TOTVS Protheus</p>
+</header>
+
+<div class="container">
+
+    <div class="section">
+        <h2>🛠️ 1. Instalação Automatizada</h2>
+        <p>O Weepulse Monitor possui um instalador silencioso desenhado para servidores Windows, que configura o ambiente Python e registra o serviço web automaticamente.</p>
+        
+        <h3>Passo a Passo de Implantação</h3>
+        <ol>
+            <li>Extraia a pasta do Weepulse no diretório definitivo do servidor do cliente (Ex: <code>C:\Weepulse</code>).</li>
+            <li>Abra o <b>PowerShell</b> como Administrador.</li>
+            <li>Execute o comando de permissão: <code>Set-ExecutionPolicy Bypass -Scope Process -Force</code>.</li>
+            <li>Arraste o arquivo <code>Instalar_Weepulse.ps1</code> para a tela do PowerShell e pressione Enter.</li>
+            <li>O sistema fará o download das dependências e criará o Serviço do Windows <i>"WeepulseMonitor"</i>.</li>
+            <li>Acesse o painel pelo navegador em <code>http://localhost:5001</code>.</li>
+        </ol>
+
+        <div class="print-placeholder">
+            <div class="placeholder-text">📷 <b>COLE O PRINT AQUI:</b> Tela do PowerShell rodando a instalação.</div>
+            </div>
+    </div>
+
+    <div class="section">
+        <h2>⚙️ 2. Configurações Iniciais (Menu 7)</h2>
+        <p>A primeira etapa após a instalação é configurar a comunicação do Weepulse com a rede, banco de dados e provedor de e-mail.</p>
+        
+        <ul>
+            <li><b>Rede (WinRM):</b> Informe um usuário com privilégios de Administrador no domínio para que o sistema possa coletar dados remotamente sem precisar instalar agentes nos outros servidores.</li>
+            <li><b>Banco SQL:</b> Insira as credenciais do SQL Server. Isso habilitará o Menu 3 (Monitoramento DBA).</li>
+            <li><b>SMTP (Alertas):</b> Configure a conta de envio. Utilize o botão "Testar Envio" para confirmar a comunicação.</li>
+            <li><b>Limites:</b> Defina a margem crítica para consumo de CPU, Memória e espaço mínimo de Disco Livre.</li>
+            <li><b>Reinicialização Programada:</b> Agende o horário diário e os dias da semana para a rotina de limpeza de memória da madrugada.</li>
+        </ul>
+
+        <div class="print-placeholder">
+            <div class="placeholder-text">📷 <b>COLE O PRINT AQUI:</b> Tela do Menu 7 (Configurações).</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>🔄 3. Auto-Healing de Serviços (Menu 1)</h2>
+        <p>Este é o núcleo operacional para o ERP. O sistema classifica automaticamente serviços como APPSERVER, DBACCESS e LICENSE através de inteligência de leitura de caminhos executáveis.</p>
+
+        <h3>Como funciona o Auto-Healing?</h3>
+        <p>Ao ativar o botão <b>Healing: ON</b> para um serviço, o Weepulse passa a vigiá-lo em tempo real. Se uma queda for detectada (Status STOPPED):</p>
+        <ol>
+            <li>O motor localiza o diretório raiz do executável e lê o arquivo <code>.ini</code> para descobrir o nome real do log.</li>
+            <li>Extrai as últimas 50 linhas críticas do arquivo de console.</li>
+            <li>Dispara um comando via PowerShell para forçar o reinício do serviço.</li>
+            <li>Envia um e-mail probatório contendo o trecho do log que antecedeu a queda.</li>
+        </ol>
+
+        <div class="alert">
+            <b>Reinício Sequencial Seguro:</b> O botão "Reiniciar Todo o Sistema" suspende temporariamente os monitores, desliga os AppServers, desliga os DBs, reinicia o License, aguarda 10 segundos para estabilização, religa os DBs e, por fim, religa os AppServers.
+        </div>
+
+        <div class="print-placeholder">
+            <div class="placeholder-text">📷 <b>COLE O PRINT AQUI:</b> Tela de Serviços com monitores ativados.</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📈 4. Monitoramento de Servidores (Menu 2)</h2>
+        <p>O acompanhamento de hardware do Weepulse é contínuo e não depende de abas abertas no navegador, rodando como uma <i>Background Task</i> silenciosa no servidor.</p>
+
+        <ul>
+            <li><b>Gráfico de Histórico Contínuo:</b> A CPU e a Memória de todos os servidores cadastrados são amostradas no banco de dados. Ao abrir a tela, o histórico é plotado em tempo real, eliminando "buracos" de medição.</li>
+            <li><b>Análise de Discos:</b> Traz a volumetria de todas as partições montadas e alerta em vermelho capacidades críticas.</li>
+            <li><b>Event Viewer Integrado:</b> O sistema traz para a interface web os "Erros Nível 1 e 2 (System/Application)" gerados nas últimas 24 horas pelo Windows, facilitando auditorias rápidas.</li>
+        </ul>
+
+        <div class="print-placeholder">
+            <div class="placeholder-text">📷 <b>COLE O PRINT AQUI:</b> Gráficos de Hardware e Event Viewer.</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>🗄️ 5. Monitoramento de Banco de Dados (Menu 3)</h2>
+        <p>Uma ferramenta completa de Health Check para DBA. Executa um script nativo otimizado no SQL Server que avalia dezenas de parâmetros críticos e retorna o diagnóstico renderizado.</p>
+
+        <ul>
+            <li><b>Gargalos Atuais:</b> Exibe "Deadlocks" das últimas horas e "Processos Bloqueados (Travados)" no exato momento do clique, com indicação do usuário e da Query que está travando o banco.</li>
+            <li><b>Queries Mais Lentas:</b> Mostra as 20 transações mais pesadas executadas recentemente (Top Queries), detalhando tempo médio e I/O gerado.</li>
+            <li><b>Saúde Estrutural:</b> Análise da Page Life Expectancy (PLE), saturação do TempDB e fragmentação severa de índices (acima de 30%).</li>
+            <li><b>Sugestões de Índices (Missing Indexes):</b> O SQL analisa quais índices faltam para melhorar a performance (impacto > 70%) e o Weepulse já gera o script <code>CREATE INDEX</code> pronto para copiar e colar.</li>
+        </ul>
+
+        <div class="print-placeholder">
+            <div class="placeholder-text">📷 <b>COLE O PRINT AQUI:</b> Dashboard de Monitoramento do Banco de Dados.</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>✅ 6. Checagem de Requisitos Oficiais (Menu 4)</h2>
+        <p>Evita problemas de lentidão atestando se a infraestrutura do cliente atende ao documento oficial de dimensionamento da TOTVS para as versões mais recentes.</p>
+        
+        <p>O avaliador verifica o <i>Role</i> do servidor (ERP ou Banco de Dados) e compara:</p>
+        <ul>
+            <li>Cores de CPU e Frequência Base (GHz).</li>
+            <li>Quantidade de Memória RAM necessária vs Encontrada.</li>
+            <li>Tamanho recomendado para discos de SO e Dados.</li>
+            <li>Configurações de rede, <i>Collation</i> do SQL Server e Latência de Ping (interna e externa).</li>
+        </ul>
+
+        <div class="print-placeholder">
+            <div class="placeholder-text">📷 <b>COLE O PRINT AQUI:</b> Tela de avaliação de requisitos (Aprovado/Reprovado).</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📄 7. Analisador de Logs do Protheus (Menu 5)</h2>
+        <p>Centraliza a investigação de erros (Access Violations, Fatal Errors) sem precisar de acesso RDP ou FTP às pastas dos servidores.</p>
+
+        <ul>
+            <li><b>Varredura Automática:</b> O Weepulse busca dinamicamente todos os executáveis do ambiente, ignora arquivos nativos do Windows e lista apenas instâncias ativas do Protheus.</li>
+            <li><b>Leitura Inteligente:</b> Localiza a chave <code>consolefile=</code> nos arquivos <code>.ini</code> para exibir com precisão o log daquele serviço específico.</li>
+            <li><b>Highlighter Customizável:</b> O usuário pode cadastrar palavras-chave (ex: "ERROR", "THREAD", "FALHA") no banco de dados e o Weepulse marcará essas linhas com cores vivas para leitura dinâmica.</li>
+        </ul>
+
+        <div class="print-placeholder">
+            <div class="placeholder-text">📷 <b>COLE O PRINT AQUI:</b> Leitor de Logs com as palavras-chave destacadas.</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>🗺️ 8. Documentação de Ambiente (Menu 6)</h2>
+        <p>Módulo voltado para engenharia e topologia. Faz a engenharia reversa do ambiente do cliente lendo todos os arquivos de configuração (INIs).</p>
+
+        <ul>
+            <li>Desmonta a estrutura de portas (TCP, WebApp, REST, Portal).</li>
+            <li>Exibe o License Server referenciado por cada AppServer.</li>
+            <li>Lista os <i>Envs</i> de conexão com o banco de dados e o <i>Startpath/Sourcepath</i> dos dicionários de dados do Protheus.</li>
+            <li><b>Bypass de Limites:</b> Usa uma tecnologia de fragmentação de <i>Base64</i> para conseguir enviar grandes volumes de script via WinRM, evitando a restrição clássica de caracteres da Microsoft.</li>
+        </ul>
+
+        <div class="print-placeholder">
+            <div class="placeholder-text">📷 <b>COLE O PRINT AQUI:</b> Tela da Documentação gerada a partir dos arquivos INI.</div>
+        </div>
+    </div>
+
+</div>
+
+</body>
+</html>
