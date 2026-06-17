@@ -42,7 +42,9 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    app.config["SECRET_KEY"] = os.urandom(24)
+    # SECRET_KEY é carregada pelo Config (via env ou instance/secret.key).
+    # Não sobrescrever aqui — qualquer atribuição nova invalidaria todas as
+    # sessões ativas a cada restart do serviço Windows.
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=15)
     app.config.setdefault("SQLALCHEMY_TRACK_MODIFICATIONS", False)
     app.config.setdefault("SQLALCHEMY_ENGINE_OPTIONS", {
